@@ -68,6 +68,7 @@ visual-studio-code-bin
 zen-browser-bin
 herdr-bin
 claude-code
+deepseek-harness-bin
 ai-usagebar-bin
 otf-space-grotesk
 bibata-cursor-theme-bin
