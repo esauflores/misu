@@ -2,6 +2,12 @@
 # Arch test VM under KVM. The first run (or --iso) boots the Arch ISO for archinstall;
 # later runs boot the disk. The repo is shared live over 9p (tag "rice"), guest SSH
 # is on 127.0.0.1:2222 and QMP on $dir/qmp.sock. Extra arguments go to qemu.
+#
+# The window's app id is rice-vm, so the host compositor can open it full screen
+# (a niri rule) and toggle that with its own key. The guest starts at the host's
+# resolution, so full screen is pixel for pixel. SDL runs on Wayland (not
+# XWayland), so Ctrl+Alt+G's grab asks the host to pass Super shortcuts to the
+# guest; press it again to release.
 set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -14,6 +20,14 @@ ovmf=/usr/share/edk2/x64
 mkdir -p "$dir"
 [[ -f $dir/OVMF_VARS.fd ]] || cp "$ovmf/OVMF_VARS.4m.fd" "$dir/OVMF_VARS.fd"
 [[ -f $disk ]] || { qemu-img create -f qcow2 "$disk" 40G; set -- --iso "$@"; }
+
+# Host resolution from niri, scroll or sway; 1920x1080 when none answers.
+read -r width height < <({
+  niri msg --json focused-output | jq -r '.modes[.current_mode] | "\(.width) \(.height)"' \
+    || { scrollmsg -t get_outputs || swaymsg -t get_outputs; } \
+    | jq -r 'map(select(.focused))[0].current_mode | "\(.width) \(.height)"'
+} 2>/dev/null) || true
+[[ ${width:-} =~ ^[0-9]+$ ]] || { width=1920 height=1080; }
 
 cdrom=()
 if [[ ${1:-} == --iso ]]; then
@@ -30,13 +44,14 @@ if [[ ${1:-} == --iso ]]; then
   cdrom=(-drive "if=none,id=cd,media=cdrom,readonly=on,file=$iso" -device ide-cd,drive=cd,bootindex=0)
 fi
 
-exec qemu-system-x86_64 \
+SDL_VIDEODRIVER=wayland SDL_VIDEO_DRIVER=wayland SDL_VIDEO_WAYLAND_WMCLASS=rice-vm SDL_APP_ID=rice-vm \
+  exec qemu-system-x86_64 \
   -name rice-vm -machine q35,accel=kvm -cpu host -smp 4 -m 8G \
   -drive "if=pflash,format=raw,readonly=on,file=$ovmf/OVMF_CODE.4m.fd" \
   -drive "if=pflash,format=raw,file=$dir/OVMF_VARS.fd" \
   -drive "if=none,id=hd,format=qcow2,discard=unmap,file=$disk" -device virtio-blk-pci,drive=hd,bootindex=1 \
   "${cdrom[@]}" \
-  -device virtio-vga-gl -display gtk,gl=on \
+  -device "virtio-vga-gl,xres=$width,yres=$height" -display sdl,gl=on,show-cursor=off \
   -device virtio-tablet-pci -device virtio-keyboard-pci \
   -nic user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22 \
   -virtfs "local,path=$ROOT,mount_tag=rice,security_model=none" \
