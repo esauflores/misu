@@ -62,7 +62,7 @@ Item {
                 width: parent.width
                 text: "OUTPUT"
                 color: root.inkDim
-                font.family: Theme.mono
+                font.family: Theme.fontPrimary
                 font.pixelSize: 8.5 * root.s
                 font.letterSpacing: 1.5
             }
@@ -116,7 +116,7 @@ Item {
                 width: parent.width
                 text: "INPUT"
                 color: root.inkDim
-                font.family: Theme.mono
+                font.family: Theme.fontPrimary
                 font.pixelSize: 8.5 * root.s
                 font.letterSpacing: 1.5
             }
@@ -154,7 +154,7 @@ Item {
                 width: parent.width
                 text: "APPS"
                 color: root.inkDim
-                font.family: Theme.mono
+                font.family: Theme.fontPrimary
                 font.pixelSize: 8.5 * root.s
                 font.letterSpacing: 1.5
             }
@@ -191,7 +191,7 @@ Item {
                 width: parent.width
                 text: "RECORDING"
                 color: root.inkDim
-                font.family: Theme.mono
+                font.family: Theme.fontPrimary
                 font.pixelSize: 8.5 * root.s
                 font.letterSpacing: 1.5
             }

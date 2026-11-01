@@ -104,7 +104,7 @@ Item {
                     visible: root.items.length > 0
                     text: root.items.length
                     color: root.inkDim
-                    font.family: Theme.mono
+                    font.family: Theme.fontPrimary
                     font.pixelSize: 9 * root.s
                 }
             }
@@ -217,7 +217,7 @@ Item {
                             width: Math.min(implicitWidth, parent.width - countPill.width - 5 * root.s)
                             text: (g.app || "Unknown").toUpperCase()
                             color: g.critical ? Theme.error : root.inkDim
-                            font.family: Theme.mono
+                            font.family: Theme.fontPrimary
                             font.pixelSize: 9 * root.s
                             font.letterSpacing: 1.2
                             elide: Text.ElideRight
@@ -235,7 +235,7 @@ Item {
                                 anchors.centerIn: parent
                                 text: g.count
                                 color: root.inkDim
-                                font.family: Theme.mono
+                                font.family: Theme.fontPrimary
                                 font.pixelSize: 8.5 * root.s
                             }
                         }
@@ -256,7 +256,7 @@ Item {
                             anchors.verticalCenter: parent.verticalCenter
                             text: Notifs.timeLabel(g.entries[0])
                             color: root.inkDim
-                            font.family: Theme.mono
+                            font.family: Theme.fontPrimary
                             font.pixelSize: 9 * root.s
                         }
                         // clear this app's stack.
@@ -340,7 +340,7 @@ Item {
                         width: visible ? implicitWidth : 0
                         text: Notifs.timeLabel(e.n)
                         color: root.inkDim
-                        font.family: Theme.mono
+                        font.family: Theme.fontPrimary
                         font.pixelSize: 8.5 * root.s
                     }
                 }

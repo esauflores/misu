@@ -134,7 +134,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: Battery.pct + "%"
                     color: Battery.low ? Theme.error : root.ink
-                    font.family: Theme.mono
+                    font.family: Theme.fontPrimary
                     font.pixelSize: 22 * root.s
                     font.weight: Font.Medium
                     font.features: ({ "tnum": 1 })
@@ -146,7 +146,7 @@ Item {
                     : Battery.charging ? "%1 · %2 to full".arg(Battery.stateLabel).arg(Battery.timeStr)
                     : "%1 · %2 left".arg(Battery.stateLabel).arg(Battery.timeStr)
                 color: root.inkDim
-                font.family: Theme.mono
+                font.family: Theme.fontPrimary
                 font.pixelSize: 9.5 * root.s
                 elide: Text.ElideRight
             }
@@ -161,7 +161,7 @@ Item {
                 width: parent.width
                 text: "POWER MODE"
                 color: root.inkDim
-                font.family: Theme.mono
+                font.family: Theme.fontPrimary
                 font.pixelSize: 8.5 * root.s
                 font.letterSpacing: 1.5
             }
@@ -233,7 +233,7 @@ Item {
                     visible: root.btBatteries.length > 0
                     text: "BLUETOOTH"
                     color: root.inkDim
-                    font.family: Theme.mono
+                    font.family: Theme.fontPrimary
                     font.pixelSize: 8.5 * root.s
                     font.letterSpacing: 1.5
                 }

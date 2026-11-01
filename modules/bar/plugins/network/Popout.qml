@@ -247,7 +247,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: apr.ap.band || ""
                     color: root.inkDim
-                    font.family: Theme.mono
+                    font.family: Theme.fontPrimary
                     font.pixelSize: 9.5 * root.s
                 }
                 MaterialIcon {
@@ -261,7 +261,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: apr.connecting ? "…" : Math.round(apr.ap.strength || 0) + "%"
                     color: root.inkDim
-                    font.family: Theme.mono
+                    font.family: Theme.fontPrimary
                     font.pixelSize: 9.5 * root.s
                 }
             }
@@ -480,7 +480,7 @@ Item {
                         return Network.wifiConnectivity === "Connecting" ? "Connecting…" : "Choose a network";
                     }
                     color: root.inkDim
-                    font.family: Theme.mono
+                    font.family: Theme.fontPrimary
                     font.pixelSize: 9 * root.s
                     elide: Text.ElideRight
                 }
@@ -493,7 +493,7 @@ Item {
             visible: root.wifiOn
             text: root.scanning ? "NETWORKS · SCANNING" : "NETWORKS"
             color: root.inkDim
-            font.family: Theme.mono
+            font.family: Theme.fontPrimary
             font.pixelSize: 8.5 * root.s
             font.letterSpacing: 1.5
         }

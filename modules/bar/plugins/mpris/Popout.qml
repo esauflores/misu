@@ -214,7 +214,7 @@ Item {
         anchors.verticalCenter: transport.verticalCenter
         text: root.stamp(root.scrubbing ? root.scrubFrac * root.lengthSec : root.positionSec)
         color: root.inkDim
-        font.family: Theme.mono
+        font.family: Theme.fontPrimary
         font.pixelSize: 10 * root.s
         font.features: ({ "tnum": 1 })
     }
@@ -223,7 +223,7 @@ Item {
         anchors.verticalCenter: transport.verticalCenter
         text: root.stamp(root.lengthSec)
         color: root.inkDim
-        font.family: Theme.mono
+        font.family: Theme.fontPrimary
         font.pixelSize: 10 * root.s
         font.features: ({ "tnum": 1 })
     }

@@ -9,7 +9,7 @@ import qs.services
 import "../audio"
 
 // The focused device as a compact instrument row: a boxed class glyph, the name
-// and one mono status line, then a battery gauge and -- for the active audio
+// and one status line, then a battery gauge and -- for the active audio
 // sink -- the live codec, an A2DP<->headset flip and a volume bar. The primary
 // action reads the device's own state. A "!" opens a detail block with the rest
 // (address, state, trust, wake, connection age, capabilities, forget). Built on
@@ -179,7 +179,7 @@ Item {
                         return "Not paired";
                     }
                     color: root.inkDim
-                    font.family: Theme.mono
+                    font.family: Theme.fontPrimary
                     font.pixelSize: 9 * root.s
                     elide: Text.ElideRight
                 }
@@ -207,7 +207,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     text: root.battery + "%"
                     color: root.lowBattery ? Theme.error : root.ink
-                    font.family: Theme.mono
+                    font.family: Theme.fontPrimary
                     font.pixelSize: 9.5 * root.s
                     font.features: ({ "tnum": 1 })
                 }
@@ -251,7 +251,7 @@ Item {
                 anchors.verticalCenter: parent.verticalCenter
                 text: Math.round(vol.frac * 100) + "%"
                 color: root.inkDim
-                font.family: Theme.mono
+                font.family: Theme.fontPrimary
                 font.pixelSize: 9 * root.s
                 font.features: ({ "tnum": 1 })
             }

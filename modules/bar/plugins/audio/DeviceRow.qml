@@ -7,7 +7,7 @@ import "../.."
 // The collapsed header content of a RevealerButton (contract 16 sec 2.4,
 // contract 06 sec 2.2): a leading icon, an elided label that takes the slack,
 // and an optional trailing icon shown only when named, plus an optional trailing
-// text chip (mono, dimmed) shown only when set. Icons are 16px and track
+// text chip (dimmed) shown only when set. Icons are 16px and track
 // `iconColor` so a host row can dim or accent them; the label is 14px.
 Item {
     id: root
@@ -55,7 +55,7 @@ Item {
         visible: root.trailingText.length > 0
         text: root.trailingText
         color: Theme.inkOn(Theme.effectiveSurface, Theme.surfaceVariantText, 3.0)
-        font.family: Theme.mono
+        font.family: Theme.fontPrimary
         font.pixelSize: Theme.fontSm
     }
 

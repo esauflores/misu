@@ -3,7 +3,7 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import qs.services
 
-// A detail line shared by the "!" panels: a dim label with a right-aligned mono
+// A detail line shared by the "!" panels: a dim label with a right-aligned
 // value, or -- with `toggle` -- a boxy switch. The caller sets `width`.
 Item {
     id: root
@@ -35,7 +35,7 @@ Item {
         anchors.verticalCenter: parent.verticalCenter
         text: root.value
         color: root.ink
-        font.family: Theme.mono
+        font.family: Theme.fontPrimary
         font.pixelSize: 10 * root.s
         elide: Text.ElideLeft
         width: Math.min(implicitWidth, root.width * 0.6)

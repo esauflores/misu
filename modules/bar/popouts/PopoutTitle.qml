@@ -4,7 +4,7 @@ import QtQuick
 import qs.services
 import ".."
 
-// A card's head label led by the 力 seal: the plugin cards' shared title, mono
+// A card's head label led by the 力 seal: the plugin cards' shared title,
 // uppercase in the dim ink.
 Row {
     id: title
@@ -24,7 +24,7 @@ Row {
         anchors.verticalCenter: parent.verticalCenter
         text: title.text
         color: title.color
-        font.family: Theme.mono
+        font.family: Theme.fontPrimary
         font.pixelSize: 9 * title.s
         font.letterSpacing: 1.6
         font.weight: Font.Medium

@@ -324,7 +324,7 @@ Item {
             visible: root.adapterOn && root.focusDev !== null && root.railDevices.length > 0
             text: root.discovering ? "OTHER · SCANNING" : "OTHER DEVICES"
             color: root.inkDim
-            font.family: Theme.mono
+            font.family: Theme.fontPrimary
             font.pixelSize: 8.5 * root.s
             font.letterSpacing: 1.5
         }

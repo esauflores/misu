@@ -31,10 +31,9 @@ Scope {
     PanelWindow {
         id: overlay
 
-        // Card chrome follows the panel's physical height (1080p = 1) and the
-        // accessibility font scale, so cards match the rail on small screens.
-        readonly property real s: (root.modelData ? root.modelData.height * root.modelData.devicePixelRatio / 1080 : 1)
-            * Config.fontScale
+        // Card size, tuned for this laptop's 1366x768 panel, times the font
+        // scale. Change the 0.8 when the screen changes (about 1.0 for 1080p).
+        readonly property real s: 0.8 * Config.fontScale
 
         readonly property bool monFullscreen: Wm.outputHasFullscreen(root.modelData ? root.modelData.name : "")
         onMonFullscreenChanged: if (monFullscreen) cards.closeAll()

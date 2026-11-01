@@ -100,7 +100,7 @@ PanelWindow {
                             text: card.n.appName || ""
                             visible: text.length > 0
                             color: Theme.surfaceVariantText
-                            font.family: Theme.mono
+                            font.family: Theme.fontPrimary
                             font.pixelSize: 10
                             elide: Text.ElideRight
                         }

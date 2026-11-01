@@ -2,7 +2,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls
-import Quickshell.Widgets
 import qs.services
 import "../popouts"
 import "../plugins/index.js" as Plugins
@@ -75,13 +74,13 @@ Popout {
         }
     ]
 
-    // The card's own skin scrolls with its content, so the rounded clip keeps
-    // its corners and the outline below redraws the edges a scroll cuts off.
-    ClippingRectangle {
+    // The card's own skin scrolls with its content; a plain clip (no texture, so
+    // text stays sharp) cuts it only when it overflows, and the outline below
+    // redraws the edges the clip cuts off.
+    Item {
         width: root.openW
         height: root.openH
-        radius: Theme.radiusWindow
-        color: "transparent"
+        clip: root.overflows
 
         Flickable {
             id: scroller

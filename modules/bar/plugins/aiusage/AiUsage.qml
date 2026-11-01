@@ -6,12 +6,14 @@ import Quickshell
 import Quickshell.Io
 import "usage.js" as Calc
 
-// Plan usage for every AI provider `ai-usagebar` is set up for (Claude, Codex,
-// Copilot, OpenRouter, DeepSeek, ...), read from `ai-usagebar usage --json`
-// every five minutes and on demand. One poller serves the rail and the card.
+// Claude and Codex plan usage, read from `ai-usagebar usage --json` every five
+// minutes and on demand; other providers it reports are left out. One poller serves the rail and the card.
 // A failed read keeps the last report and marks it stale.
 Singleton {
     id: root
+
+    // ai-usagebar ids of the providers shown, in tab order.
+    readonly property var kept: ["anthropic", "openai"]
 
     property var providers: []
     property bool installed: true
@@ -37,7 +39,8 @@ Singleton {
                 const list = Calc.parse(this.text);
                 if (list === null)
                     return;
-                root.providers = list;
+                root.providers = list.filter(p => root.kept.indexOf(p.id) >= 0)
+                    .sort((a, b) => root.kept.indexOf(a.id) - root.kept.indexOf(b.id));
                 root.updated = Date.now() / 1000;
                 root.stale = false;
                 root.error = "";

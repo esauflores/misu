@@ -98,7 +98,6 @@ Singleton {
     readonly property int iconSm: 16
 
     readonly property string fontPrimary: Config.fontFamily
-    readonly property string mono: "JetBrainsMono Nerd Font"
     readonly property string fontJp: "Noto Sans CJK JP"
     readonly property int fontSm: 14
     readonly property int fontMd: 16

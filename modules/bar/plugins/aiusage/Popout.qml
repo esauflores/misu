@@ -6,7 +6,8 @@ import "../.."
 import qs.services
 import "usage.js" as Calc
 
-// AI usage card: one block per provider `ai-usagebar` reports, each window
+// AI usage card: a tab per provider (Claude, Codex) and the selected one's
+// windows below, each
 // leading with the percent used, a gauge with a faint tick where even spending
 // would be by now, then the pace in points beside the countdown to the reset.
 // Colour follows the CLI's severity: amber at high, red at critical. Windows
@@ -24,10 +25,10 @@ Item {
     readonly property color line: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.16)
     readonly property color warn: Qt.tint(Theme.primary, Qt.rgba(Theme.error.r, Theme.error.g, Theme.error.b, 0.55))
 
-    // the card's two text styles: mono figures (dim by default) and sans heads.
-    component Mono: Text {
+    // the card's two text styles: small figures (dim by default) and heads.
+    component Small: Text {
         color: root.dim
-        font.family: Theme.mono
+        font.family: Theme.fontPrimary
         font.pixelSize: 11 * root.s
     }
     component Head: Text {
@@ -65,6 +66,17 @@ Item {
         return left === "" ? "" : "resets in %1".arg(left);
     }
 
+    // selected tab; falls back to the first provider reported.
+    property string tab: ""
+    readonly property var current: AiUsage.providers.find(p => p.id === root.tab) || AiUsage.providers[0] || null
+
+    // a missing credentials file means the CLI was never signed in.
+    function errorLabel(p) {
+        if (/No such file/.test(p.error))
+            return "Not signed in. Run `%1` to log in.".arg(p.id === "openai" ? "codex" : "claude");
+        return p.error;
+    }
+
     function brand(id) {
         return /anthropic|claude/.test(id) ? "assets/claude.svg"
              : /openai|codex/.test(id) ? "assets/codex.svg" : "";
@@ -100,7 +112,7 @@ Item {
                 text: "AI usage"
                 font.pixelSize: 14 * root.s
             }
-            Mono {
+            Small {
                 anchors.right: reload.left
                 anchors.rightMargin: 6 * root.s
                 anchors.baseline: title.baseline
@@ -123,71 +135,89 @@ Item {
 
         Item { width: 1; height: 12 * root.s }
 
-        Mono {
+        // tabs: one pill per provider, the selected one filled
+        Row {
+            visible: AiUsage.providers.length > 0
+            width: parent.width
+            spacing: 6 * root.s
+            bottomPadding: 12 * root.s
+
+            Repeater {
+                model: AiUsage.providers
+                delegate: Rectangle {
+                    id: tabItem
+                    required property var modelData
+                    readonly property bool active: root.current !== null && root.current.id === modelData.id
+
+                    width: (content.width - 6 * root.s * (AiUsage.providers.length - 1)) / AiUsage.providers.length
+                    height: 28 * root.s
+                    radius: height / 2
+                    color: tabItem.active ? root.line : tabArea.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.07) : "transparent"
+                    border.width: Theme.borderWidth
+                    border.color: root.line
+
+                    Row {
+                        anchors.centerIn: parent
+                        spacing: 6 * root.s
+                        Image {
+                            visible: source != ""
+                            anchors.verticalCenter: parent.verticalCenter
+                            width: 13 * root.s
+                            height: width
+                            source: root.brand(tabItem.modelData.id)
+                            fillMode: Image.PreserveAspectFit
+                            smooth: true
+                            opacity: tabItem.active ? 1 : 0.6
+                        }
+                        Head {
+                            anchors.verticalCenter: parent.verticalCenter
+                            text: tabItem.modelData.name
+                            color: tabItem.active ? root.ink : root.dim
+                        }
+                    }
+                    MouseArea {
+                        id: tabArea
+                        anchors.fill: parent
+                        hoverEnabled: true
+                        cursorShape: Qt.PointingHandCursor
+                        onClicked: root.tab = tabItem.modelData.id
+                    }
+                }
+            }
+        }
+
+        Small {
             width: parent.width
             visible: !AiUsage.installed || (AiUsage.providers.length === 0 && !AiUsage.refreshing)
             wrapMode: Text.Wrap
-            text: !AiUsage.installed ? "Install ai-usagebar (AUR: ai-usagebar-bin) and set up providers in ~/.config/ai-usagebar/config.toml."
+            text: !AiUsage.installed ? "Install ai-usagebar (AUR: ai-usagebar-bin)."
                 : AiUsage.error !== "" ? AiUsage.error
-                : "No providers reported. Sign in to claude or codex, or add one in ~/.config/ai-usagebar/config.toml."
+                : "No usage yet. Sign in to claude or codex."
         }
 
         Repeater {
-            model: AiUsage.providers
+            model: root.current ? [root.current] : []
             delegate: Column {
                 id: prov
                 required property var modelData
-                required property int index
 
                 width: content.width
-                topPadding: index > 0 ? 14 * root.s : 0
                 spacing: 8 * root.s
 
-                Rectangle {
-                    visible: prov.index > 0
+                // plan · account
+                Small {
+                    visible: text !== ""
                     width: parent.width
-                    height: Theme.borderWidth
-                    color: root.line
+                    elide: Text.ElideLeft
+                    text: [prov.modelData.plan, prov.modelData.account].filter(t => t !== "").join(" · ")
+                    font.pixelSize: 10 * root.s
                 }
 
-                // provider: brand mark, name, then plan · account on the right
-                Item {
-                    width: parent.width
-                    height: name.implicitHeight
-                    Image {
-                        id: logo
-                        visible: source != ""
-                        anchors.verticalCenter: name.verticalCenter
-                        width: visible ? 14 * root.s : 0
-                        height: width
-                        source: root.brand(prov.modelData.id)
-                        fillMode: Image.PreserveAspectFit
-                        smooth: true
-                    }
-                    Head {
-                        id: name
-                        anchors.left: logo.right
-                        anchors.leftMargin: logo.visible ? 7 * root.s : 0
-                        text: prov.modelData.name
-                        font.pixelSize: 13 * root.s
-                    }
-                    Mono {
-                        anchors.left: name.right
-                        anchors.leftMargin: 8 * root.s
-                        anchors.right: parent.right
-                        anchors.baseline: name.baseline
-                        horizontalAlignment: Text.AlignRight
-                        elide: Text.ElideLeft
-                        text: [prov.modelData.plan, prov.modelData.account].filter(t => t !== "").join(" · ")
-                        font.pixelSize: 10 * root.s
-                    }
-                }
-
-                Mono {
+                Small {
                     visible: prov.modelData.error !== ""
                     width: parent.width
                     wrapMode: Text.Wrap
-                    text: prov.modelData.error
+                    text: root.errorLabel(prov.modelData)
                     color: root.warn
                 }
 
@@ -217,7 +247,7 @@ Item {
                                 text: row.modelData.label
                                 font.weight: Font.Medium
                             }
-                            Mono {
+                            Small {
                                 id: big
                                 anchors.right: parent.right
                                 text: row.gauge ? Math.round(row.modelData.pct) + "%" : row.modelData.value
@@ -263,7 +293,7 @@ Item {
                             visible: paceText.text !== "" || resetText.text !== ""
                             width: parent.width
                             height: paceText.implicitHeight
-                            Mono {
+                            Small {
                                 id: paceText
                                 text: root.paceLabel(row.pace)
                                 // under pace is good news (accent); over is neutral
@@ -272,7 +302,7 @@ Item {
                                     : row.modelData.severity === "high" || row.modelData.severity === "critical" ? row.accent : root.ink
                                 font.weight: Font.Medium
                             }
-                            Mono {
+                            Small {
                                 id: resetText
                                 anchors.right: parent.right
                                 anchors.baseline: paceText.baseline
@@ -290,14 +320,14 @@ Item {
                         required property var modelData
                         width: prov.width
                         height: noteValue.implicitHeight
-                        Mono {
+                        Small {
                             anchors.left: parent.left
                             anchors.right: noteValue.left
                             anchors.rightMargin: 8 * root.s
                             elide: Text.ElideRight
                             text: note.modelData.label
                         }
-                        Mono {
+                        Small {
                             id: noteValue
                             anchors.right: parent.right
                             text: note.modelData.value

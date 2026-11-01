@@ -4,7 +4,7 @@ import QtQuick
 import ".."
 import qs.services
 
-// A hairline mono chip shared by the popout cards. `act` makes it a tappable,
+// A hairline chip shared by the popout cards. `act` makes it a tappable,
 // hoverable control; `on` fills it to a bone plate for the selected state (an
 // active power profile, the current codec). Reads the Theme directly so every
 // card's chips match without threading colours through.
@@ -50,7 +50,7 @@ Item {
             anchors.verticalCenter: parent.verticalCenter
             text: (root.label)
             color: root.on ? Theme.inverseOnSurface : root.ink
-            font.family: Theme.mono
+            font.family: Theme.fontPrimary
             font.pixelSize: 9 * root.s
         }
     }
