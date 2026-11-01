@@ -39,6 +39,9 @@ noto-fonts
 noto-fonts-cjk
 noto-fonts-emoji
 linux-firmware-intel
+mesa
+vulkan-intel
+intel-media-driver
 sof-firmware
 polkit-gnome
 xdg-desktop-portal-wlr
