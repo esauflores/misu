@@ -1,5 +1,6 @@
-// Zen defaults for Misu, installed into Zen's defaults/pref so they apply to
-// every profile, new ones included. Changing a setting in Zen still wins.
+// Zen defaults for Misu, installed into Zen's browser/defaults/preferences so they
+// apply to every profile, new ones included (defaults/pref loads before Zen's
+// own defaults and loses to them). Changing a setting in Zen still wins.
 pref("zen.tabs.vertical.right-side", true);
 pref("zen.view.compact.enable-at-startup", true);
 pref("zen.view.compact.hide-toolbar", true);

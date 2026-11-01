@@ -1,0 +1,8 @@
+matugen
+glib2
+gsettings-desktop-schemas
+dconf
+qt6ct
+adw-gtk-theme
+adwaita-icon-theme
+bibata-cursor-theme-bin

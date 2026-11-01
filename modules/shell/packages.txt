@@ -1,0 +1,7 @@
+zsh
+kitty
+starship
+zoxide
+fzf
+mise
+ttf-jetbrains-mono-nerd

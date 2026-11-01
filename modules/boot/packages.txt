@@ -1,0 +1,9 @@
+# Limine boot loader; the hook writes an entry per kernel on every kernel or
+# initramfs change.
+limine
+limine-mkinitcpio-hook
+# Btrfs snapshots of / before and after every package transaction, each one a
+# boot menu entry to roll back to.
+snapper
+snap-pac
+limine-snapper-sync

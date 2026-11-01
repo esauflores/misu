@@ -1,0 +1,4 @@
+greetd
+cage
+# webp wallpaper in Qt
+qt6-imageformats

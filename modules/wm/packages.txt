@@ -1,0 +1,16 @@
+sway-scroll
+fuzzel
+swaybg
+swaylock
+swayidle
+cliphist
+hyprpicker
+wlsunset
+grim
+slurp
+wl-clipboard
+libnotify
+brightnessctl
+polkit-gnome
+xdg-desktop-portal-wlr
+xdg-desktop-portal-gtk

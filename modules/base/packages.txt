@@ -1,0 +1,26 @@
+# Build tools; core utilities come with Arch's base
+base-devel
+git
+jq
+yay
+# Network, Bluetooth, power, audio
+networkmanager
+bluez
+bluez-utils
+upower
+power-profiles-daemon
+pipewire
+pipewire-alsa
+pipewire-pulse
+wireplumber
+# Quickshell runs both the bar and the greeter
+quickshell
+# Desktop plumbing: keyring, mounts, XDG user folders
+gnome-keyring
+gvfs
+udisks2
+xdg-user-dirs
+# Fonts
+noto-fonts
+noto-fonts-cjk
+noto-fonts-emoji

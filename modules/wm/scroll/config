@@ -1,5 +1,5 @@
 # scroll (sway with niri-style columns). Linked from
-# ~/Projects/rice/modules/wm/scroll: edit, then `scrollmsg reload`
+# this checkout's modules/wm/scroll: edit, then `scrollmsg reload`
 # (Super+Ctrl+Shift+R) applies it. No rebuild needed. Commands: man 5 scroll.
 
 set $mod Mod4

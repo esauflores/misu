@@ -2,5 +2,5 @@
 vt = 1
 
 [default_session]
-command = "dbus-run-session cage -s -mlast -d -- regreet"
+command = "env XCURSOR_PATH=/etc/greetd/misu/icons:/usr/share/icons XCURSOR_THEME=Bibata-Modern-Ice XCURSOR_SIZE=20 cage -s -mlast -d -- qs -p /etc/greetd/misu/shell.qml"
 user = "greeter"

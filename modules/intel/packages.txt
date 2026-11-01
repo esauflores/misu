@@ -1,0 +1,7 @@
+# Graphics: mesa (iris OpenGL), Vulkan (ANV), VA-API video decode (iHD)
+mesa
+vulkan-intel
+intel-media-driver
+# Firmware: GPU, Wi-Fi and Bluetooth; the audio DSP
+linux-firmware-intel
+sof-firmware
