@@ -45,7 +45,10 @@ test/vm.sh -display none       # extra args go to qemu; this runs it headless
 RICE_VM_DIR=/tmp/x test/vm.sh  # throwaway VM
 ```
 
-Run it in the background (it blocks until the VM powers off). Start over with
+It blocks until the VM powers off. Start it detached,
+`setsid -f test/vm.sh >/dev/null 2>&1 </dev/null`, so the VM outlives an agent
+session; a plain background job is killed with the session. Run long jobs in
+the guest as `systemd-run` units for the same reason. Start over with
 `rm ~/.cache/rice-vm/arch.qcow2`.
 
 ### First install (the user does this in the window)
