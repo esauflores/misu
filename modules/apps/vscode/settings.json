@@ -2,5 +2,8 @@
   "workbench.sideBar.location": "right",
   "editor.fontFamily": "'JetBrainsMono Nerd Font', monospace",
   "terminal.integrated.fontFamily": "'JetBrainsMono Nerd Font', monospace",
-  "explorer.excludeGitIgnore": true
+  "terminal.integrated.env.linux": { "KITTY_WINDOW_ID": null, "KITTY_PID": null },
+  "explorer.excludeGitIgnore": true,
+  "chat.disableAIFeatures": true,
+  "chat.commandCenter.enabled": false
 }

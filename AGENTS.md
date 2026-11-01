@@ -17,7 +17,7 @@ copies its root-owned files (to `/etc`, `/usr/share`).
 - `theme`: matugen config and templates, wallpapers, GTK/Qt/cursor settings
 - `greeter`: Regreet under Cage on greetd
 - `shell`: zsh, kitty, starship, git identity
-- `apps`: herdr, mimeapps, VS Code defaults
+- `apps`: herdr, mimeapps, Zen defaults (all profiles), VS Code defaults
 
 When you add an installed file, add it to its module's section in `install.sh`
 and check with `./install.sh --dry-run` (no root needed; it prints every

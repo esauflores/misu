@@ -84,9 +84,11 @@ as_user git config --global user.name 'Cesar Flores'
 as_user git config --global user.email 'dev@esauflores.com'
 run chsh -s /bin/zsh "$target_user"
 
-# apps: herdr, default applications, VS Code defaults merged into existing settings
+# apps: herdr, default applications, Zen defaults, VS Code defaults merged into
+# existing settings
 link "$M/apps/herdr" "$home/.config/herdr"
 link "$M/apps/mimeapps.list" "$home/.config/mimeapps.list"
+run install -Dm644 "$M/apps/zen/misu.js" /opt/zen-browser-bin/defaults/pref/misu.js
 
 vscode_settings="$home/.config/Code/User/settings.json"
 if (( DRY_RUN )); then
