@@ -1,0 +1,7 @@
+result
+result-*
+*.qcow2
+modules/apps/herdr/*.log
+modules/apps/herdr/.plugins.lock
+modules/apps/herdr/session.json
+modules/apps/herdr/session-snapshots/

@@ -1,0 +1,6 @@
+{
+  "workbench.sideBar.location": "right",
+  "editor.fontFamily": "'JetBrainsMono Nerd Font', monospace",
+  "terminal.integrated.fontFamily": "'JetBrainsMono Nerd Font', monospace",
+  "explorer.excludeGitIgnore": true
+}

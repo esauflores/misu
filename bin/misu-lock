@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+wallpaper=$(misu-wall current 2>/dev/null || true)
+[[ -f $wallpaper ]] || wallpaper=/usr/share/backgrounds/rice/black-hole.webp
+
+exec swaylock -f \
+  --image "$wallpaper" --scaling fill --indicator \
+  --indicator-radius 90 --indicator-thickness 6 \
+  --inside-color 121318cc --inside-clear-color 242531cc \
+  --ring-color c1c5dd --ring-clear-color f6c5b6 \
+  --key-hl-color f6c5b6 --line-uses-ring \
+  --text-color e3e1e9 --bs-hl-color f6b4ab \
+  --ring-wrong-color ff6b7a --inside-wrong-color 351b22cc

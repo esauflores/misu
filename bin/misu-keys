@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# misu-keys: pick a bind from rebinds.conf with fuzzel and run it.
+
+choice=$(sed -n 's/^bindsym \(--[a-z-]* \)*\([^ ]*\) \(.*\)$/\2\t\3/p' \
+  "${XDG_CONFIG_HOME:-$HOME/.config}/scroll/config.d/rebinds.conf" | sed 's/[$]mod/Super/' | column -t -s $'\t' | fuzzel --dmenu --width 90 --prompt 'keys  ') || exit 0
+
+read -r _ cmd <<<"$choice"
+[[ -n $cmd ]] && scrollmsg -q -- "$cmd"

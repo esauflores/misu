@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# misu-session: the greeter's Misu entry; sets the Wayland environment and starts scroll.
+
+export PATH="$HOME/.local/bin:$PATH"
+export ELECTRON_OZONE_PLATFORM_HINT=auto QT_WAYLAND_DISABLE_WINDOWDECORATION=1 GSK_RENDERER=gl _JAVA_AWT_WM_NONREPARENTING=1
+export QT_QPA_PLATFORM='wayland;xcb' GDK_BACKEND='wayland,x11,*'
+export XCURSOR_THEME=Bibata-Modern-Ice XCURSOR_SIZE=20
+
+exec dbus-run-session scroll

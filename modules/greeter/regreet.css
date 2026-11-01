@@ -1,0 +1,45 @@
+window {
+  color: #e3e1e9;
+  background-color: transparent;
+  font-family: "Space Grotesk";
+}
+
+frame.background {
+  color: #e3e1e9;
+  background-color: rgba(18, 19, 24, 0.92);
+  border: 1px solid rgba(193, 197, 221, 0.82);
+  border-radius: 8px;
+}
+
+frame.widget-clock {
+  background-color: rgba(18, 19, 24, 0.78);
+  border-color: rgba(193, 197, 221, 0.5);
+}
+
+entry,
+passwordentry,
+combobox,
+combobox button {
+  color: #e3e1e9;
+  background-color: rgba(30, 31, 39, 0.96);
+  border: 1px solid rgba(193, 197, 221, 0.4);
+  border-radius: 6px;
+}
+
+button {
+  color: #e3e1e9;
+  background-color: rgba(30, 31, 39, 0.96);
+  border: 1px solid rgba(193, 197, 221, 0.4);
+  border-radius: 6px;
+}
+
+button.suggested-action {
+  color: #121318;
+  background-color: #c1c5dd;
+  border-color: #c1c5dd;
+}
+
+button.destructive-action {
+  color: #f6b4ab;
+  border-color: rgba(246, 180, 171, 0.7);
+}

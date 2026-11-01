@@ -1,0 +1,17 @@
+# scroll (sway with niri-style columns). Linked from
+# ~/Projects/rice/modules/wm/scroll: edit, then `scrollmsg reload`
+# (Super+Ctrl+Shift+R) applies it. No rebuild needed. Commands: man 5 scroll.
+
+set $mod Mod4
+
+# Distro defaults, if the package ships any.
+include /etc/scroll/config.d/*
+include config.d/autostart.conf
+include config.d/input.conf
+include config.d/outputs.conf
+include config.d/settings.conf
+include config.d/rebinds.conf
+
+# Wallpaper palette from matugen (misu-wall writes it), after settings so the
+# border follows the wallpaper.
+include ~/.local/state/rice/scroll-colors.conf

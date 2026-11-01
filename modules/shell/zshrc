@@ -1,0 +1,21 @@
+# Prompt, history, completion and command-line tools.
+
+HISTFILE=${XDG_STATE_HOME:-$HOME/.local/state}/zsh/history
+HISTSIZE=50000
+SAVEHIST=50000
+mkdir -p "${HISTFILE:h}"
+setopt share_history hist_ignore_all_dups hist_reduce_blanks auto_cd interactive_comments
+
+autoload -Uz compinit && compinit -d "${XDG_CACHE_HOME:-$HOME/.cache}/zcompdump"
+zstyle ':completion:*' matcher-list 'm:{a-z}={A-Z}'
+zstyle ':completion:*' menu select
+bindkey -e
+
+eval "$(starship init zsh)"
+eval "$(zoxide init zsh --cmd cd)"
+eval "$(fzf --zsh)"
+
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac
+
+# New terminals open in ~/Projects (only when they would start in ~).
+[[ -o interactive && $PWD == $HOME && -d ~/Projects ]] && builtin cd ~/Projects

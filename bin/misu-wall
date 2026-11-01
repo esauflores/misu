@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+# misu-wall: set and restore the wallpaper.
+#
+#   misu-wall set <image>   use this image
+#   misu-wall pick          choose from ~/Pictures/Wallpapers with fuzzel
+#   misu-wall random        a random one from ~/Pictures/Wallpapers
+#   misu-wall restore       the last one set (login), else the bundled default
+#
+# The palette lands in ~/.local/state/rice/ and follows the active wallpaper.
+
+state=${XDG_STATE_HOME:-$HOME/.local/state}/rice
+walls=${RICE_WALLPAPERS:-$HOME/Pictures/Wallpapers}
+RICE_DEFAULT_WALL=${RICE_DEFAULT_WALL:-$HOME/Pictures/Wallpapers/black-hole.webp}
+mkdir -p "$state"
+
+images() { find "$walls" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) "$@"; }
+
+apply() {
+  local img
+  img=$(realpath -- "$1")
+  [[ -f $img ]] || { echo "misu-wall: no such image: $1" >&2; exit 1; }
+  printf '%s\n' "$img" >"$state/wallpaper"
+
+  pkill -x swaybg || true
+  setsid -f swaybg -m fill -i "$img" >/dev/null 2>&1
+
+  matugen image "$img" --mode dark --type "${RICE_SCHEME:-scheme-tonal-spot}" --source-color-index 0 >/dev/null
+
+  # Push the new border colors into the running scroll without a full reload
+  # (a reload would also restart Misu).
+  if [[ -n ${SWAYSOCK:-} && -f $state/scroll-colors.conf ]]; then
+    while IFS= read -r line; do
+      [[ $line == client.* ]] && scrollmsg -q -- "$line"
+    done <"$state/scroll-colors.conf"
+  fi
+  pkill -USR1 -x kitty || true
+}
+
+case ${1:-restore} in
+  set)
+    apply "${2:?usage: misu-wall set <image>}"
+    ;;
+  pick)
+    choice=$(images -printf '%f\n' | sort | fuzzel --dmenu --prompt 'wallpaper  ') || exit 0
+    apply "$walls/$choice"
+    ;;
+  random)
+    img=$(images | shuf -n1)
+    [[ -n $img ]] && apply "$img"
+    ;;
+  restore)
+    last=$(cat "$state/wallpaper" 2>/dev/null || true)
+    if [[ -n $last && -f $last ]]; then apply "$last"; else apply "$RICE_DEFAULT_WALL"; fi
+    ;;
+  current)
+    cat "$state/wallpaper"
+    ;;
+  *)
+    sed -n '2,9p' "$0" >&2
+    exit 2
+    ;;
+esac

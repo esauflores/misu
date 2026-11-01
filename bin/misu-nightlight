@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# misu-nightlight [restore]: toggle wlsunset; restore turns it back on at login if it was on.
+flag=${XDG_STATE_HOME:-$HOME/.local/state}/rice/nightlight
+mkdir -p "$(dirname "$flag")"
+
+start() { setsid -f wlsunset -l 13.7 -L -89.2 -t 4000 >/dev/null 2>&1; }
+
+if [[ ${1:-} == restore ]]; then [[ -f $flag ]] && start; exit 0; fi
+if pkill -x wlsunset; then rm -f "$flag"; else touch "$flag"; start; fi

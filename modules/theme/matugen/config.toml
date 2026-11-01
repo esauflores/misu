@@ -1,0 +1,20 @@
+# misu-wall runs `matugen image <wallpaper>`; each template below is filled with
+# the wallpaper's palette and written to ~/.local/state/rice/.
+
+[config]
+
+[templates.scroll]
+input_path = "~/.config/matugen/templates/scroll-colors.conf"
+output_path = "~/.local/state/rice/scroll-colors.conf"
+
+[templates.kitty]
+input_path = "~/.config/matugen/templates/kitty-colors.conf"
+output_path = "~/.local/state/rice/kitty-colors.conf"
+
+[templates.fuzzel]
+input_path = "~/.config/matugen/templates/fuzzel-colors.ini"
+output_path = "~/.local/state/rice/fuzzel-colors.ini"
+
+[templates.misu]
+input_path = "~/.config/matugen/templates/misu-colors.json"
+output_path = "~/.local/state/rice/misu-colors.json"

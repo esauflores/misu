@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# misu-seat: give a mouse (and optionally a keyboard) its own seat, which means
+# its own cursor and focus on the same screen.
+#
+#   misu-seat            interactive: pick a pointer, move it to seat1
+#   misu-seat list       every input with its identifier and current seat
+
+list_inputs() {
+  scrollmsg -t get_inputs -r | jq -r --arg t "$1" '.[] | select($t == "" or .type == $t) | "\(.identifier)\t\(.name)"'
+}
+
+pick() {
+  local prompt=$1 type=$2 rows
+  mapfile -t rows < <(list_inputs "$type")
+  ((${#rows[@]})) || { echo "no $type devices found" >&2; return 1; }
+  echo "$prompt" >&2
+  select row in "${rows[@]}" "skip"; do
+    [[ $row == skip ]] && return 1
+    [[ -n $row ]] && { printf '%s\n' "${row%%$'\t'*}"; return 0; }
+  done
+}
+
+case ${1:-} in
+  list)
+    scrollmsg -t get_seats -r | jq -r '.[] | .name as $s | .devices[] | "\($s)\t\(.type)\t\(.identifier)"' | column -t -s $'\t'
+    exit 0
+    ;;
+esac
+
+seat=${RICE_SEAT:-seat1}
+mouse=$(pick "Pointer for $seat:" pointer) || exit 0
+lines=("seat $seat attach \"$mouse\"" "seat $seat xcursor_theme Bibata-Modern-Classic 20")
+if kbd=$(pick "Keyboard for $seat (skip = pointer only):" keyboard); then
+  lines+=("seat $seat attach \"$kbd\"")
+fi
+for line in "${lines[@]}"; do scrollmsg -q "$line"; done
+
+echo
+echo "Done: $seat now has its own cursor (the dark one)."
+echo "To keep it across logins, add to modules/wm/scroll/config.d/input.conf:"
+printf '  %s\n' "${lines[@]}"
+echo "To undo for this session: scrollmsg reload"
+read -rp "Press enter to close." _
