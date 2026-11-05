@@ -4,6 +4,8 @@
   "terminal.integrated.fontFamily": "'JetBrainsMono Nerd Font', monospace",
   "terminal.integrated.env.linux": { "KITTY_WINDOW_ID": null, "KITTY_PID": null },
   "explorer.excludeGitIgnore": true,
-  "chat.disableAIFeatures": true,
-  "chat.commandCenter.enabled": false
+  "chat.disableAIFeatures": false,
+  "chat.agent.enabled": false,
+  "chat.agentsControl.enabled": "hidden",
+  "workbench.secondarySideBar.defaultVisibility": "hidden"
 }
