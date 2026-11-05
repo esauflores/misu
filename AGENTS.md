@@ -37,7 +37,9 @@ sudo ./uninstall.sh [--packages] [mod]   # --packages also removes their package
   greetd. Uses `bar`'s Space Grotesk font and `theme`'s wallpaper; it starts
   `wm/bin/misu-session` straight from the checkout.
 - `wm`: scroll config, fuzzel, the session entry, and the `misu-*` commands
-  in `bin/` (linked into `~/.local/bin`)
+  in `bin/` (linked into `~/.local/bin`). `focus_wrapping stay` and the
+  `[con_id=__focused__]` on Super+arrows stop focus at the workspace's last
+  window, so those keys never cross to any other output.
 - `bar`: the Quickshell bar (config name `misu`). `plugins/aiusage` polls the
   `ai-usagebar` CLI for Claude and Codex usage.
 - `theme`: matugen config and templates, wallpapers, GTK/Qt/cursor settings
