@@ -41,7 +41,9 @@ sudo ./uninstall.sh [--packages] [mod]   # --packages also removes their package
   `[con_id=__focused__]` on Super+arrows stop focus at the workspace's last
   window, so those keys never cross to any other output.
 - `bar`: the Quickshell bar (config name `misu`). `plugins/aiusage` polls the
-  `ai-usagebar` CLI for Claude and Codex usage.
+  `ai-usagebar` CLI for Claude and Codex usage; `plugins/share` asks what to
+  share on a screen share, for `wm`'s `misu-share-pick`, the portal's chooser
+  (`wm/xdpw.conf`), which falls back to fuzzel where the card can't show.
 - `theme`: matugen config and templates, wallpapers, GTK/Qt/cursor settings
 - `shell`: zsh, kitty, starship
 - `apps`: herdr, mimeapps, Zen defaults (all profiles), VS Code defaults, AI

@@ -1,0 +1,43 @@
+#!/usr/bin/env bash
+# misu-share-pick: what to share on a screen share, picked in the bar's share
+# card. xdg-desktop-portal-wlr runs it as its chooser (wm/xdpw.conf): the sources
+# come in on stdin, one per line, and the chosen line goes out on stdout; nothing
+# out declines the share. The bar reads $dir/options and $dir/thumb-*.jpg and
+# answers on the $dir/answer FIFO. fuzzel steps in where the card can't show: no bar, or a fullscreen window.
+
+FUZZEL=@fuzzel
+
+dir=$(mktemp -d "${XDG_RUNTIME_DIR:?}/misu-share.XXXXXX") || exit 1
+trap 'rm -rf "$dir"' EXIT
+
+# The AI workspace's desk is nobody's screen.
+grep -v '^Monitor: HEADLESS-' >"$dir/options"
+mkfifo "$dir/answer" || exit 1
+exec 3<>"$dir/answer"      # read and write, so opening it doesn't wait for the bar
+
+# A thumbnail per source, thumb-<line>.jpg counting from 0, all at once and before
+# the card opens, so it isn't in them. One that fails leaves the card its icon.
+i=0
+while IFS= read -r line; do
+  case $line in
+    'Monitor: '*) name=${line#Monitor: }; source=(-o "${name%% *}") ;;
+    'Window: '*' ('*')') id=${line##*\(}; source=(-T "${id%\)}") ;;
+    *) source=() ;;
+  esac
+  if (( ${#source[@]} )); then
+    timeout 2 grim "${source[@]}" -s 0.25 -t jpeg "$dir/thumb-$i.jpg" 2>/dev/null &
+  fi
+  i=$((i + 1))
+done <"$dir/options"
+wait
+
+answer=$FUZZEL
+if qs -c misu ipc call share ask "$dir" >/dev/null 2>&1; then
+  IFS= read -r -t 300 -u 3 answer || exit 0
+fi
+if [[ $answer == "$FUZZEL" ]]; then
+  answer=$(fuzzel --dmenu --prompt 'share  ' <"$dir/options") || exit 0
+fi
+
+[[ -n $answer ]] && grep -Fx -- "$answer" "$dir/options"
+exit 0

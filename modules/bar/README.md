@@ -30,7 +30,8 @@ plugins/osd/           passive Ito-style volume, brightness and microphone displ
 ```
 
 Plugins: `audio`, `battery`, `bluetooth`, `calendar` (clock),
-`aiusage` (Claude and Codex usage via the `ai-usagebar` CLI, a tab each), `mpris`, `network`, `notifications`. Built-in rail widgets:
+`aiusage` (Claude and Codex usage via the `ai-usagebar` CLI, a tab each), `mpris`, `network`, `notifications`,
+`share` (what to share on a screen share, over `wm`'s `misu-share-pick`; no rail button, the portal opens it). Built-in rail widgets:
 `quick-settings` (decorative Misu mark), `workspaces` (5 fixed dots plus any
 extra workspaces) and `tray`.
 

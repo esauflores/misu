@@ -39,6 +39,14 @@ Singleton {
         const m = root.focusedManager();
         if (m) m.openSurface(id, null);
     }
+    // Opens a card, open already or not; false if it can't show on the focused
+    // screen (no bar there, or a fullscreen window hiding it).
+    function openMenu(id) {
+        const m = root.focusedManager();
+        if (!m || !m.active) return false;
+        if (m.openId !== id) m.openSurface(id, null);
+        return true;
+    }
     function toggleBar() {
         for (const k in root._states) root._states[k].barRevealed = !root._states[k].barRevealed;
     }

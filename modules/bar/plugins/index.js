@@ -16,7 +16,9 @@ const plugins = {
     "network": { rail: ["network"], popout: { minWidth: 250, keyboard: "ondemand" } },
     "notifications": { rail: ["notifications"], popout: { minWidth: 300 } },
     "mpris": { rail: ["mpris"], popout: { minWidth: 340 } },
-    "aiusage": { rail: ["ai-usage"], popout: { minWidth: 280 } }
+    "aiusage": { rail: ["ai-usage"], popout: { minWidth: 280 } },
+    // What to share on a screen share; no rail button, the portal opens it.
+    "share": { rail: [], popout: { minWidth: 360, keyboard: "exclusive" } }
 };
 
 // Folder of the plugin that draws rail widget `id`, or "".

@@ -9,4 +9,5 @@ echo "+ install $M/wm/misu.desktop -> /usr/share/wayland-sessions/misu.desktop (
 
 link "$M/wm/scroll" "$home/.config/scroll"
 link "$M/wm/fuzzel.ini" "$home/.config/fuzzel/fuzzel.ini"
+link "$M/wm/xdpw.conf" "$home/.config/xdg-desktop-portal-wlr/config"
 for f in "$M"/wm/bin/*; do link "$f" "$home/.local/bin/${f##*/}"; done

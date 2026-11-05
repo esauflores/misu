@@ -16,6 +16,7 @@ import "../plugins/aiusage" as PluginAiUsage
 import "../plugins/mpris" as PluginMpris
 import "../plugins/network" as PluginNetwork
 import "../plugins/notifications" as PluginNotifications
+import "../plugins/share" as PluginShare
 
 // One rail card: plugins/<kind>/Popout.qml riding the shared Popout, sliding
 // out of the right rail. The card is built on first open and kept, so

@@ -8,6 +8,7 @@ import qs.services
 import "frame"
 import "plugins/notifications" as Notifications
 import "plugins/osd" as Osd
+import "plugins/share" as Share
 
 // Misu: an ink rail on the right edge of every output, for scroll. Run with
 // `qs -c misu` (or `qs -p <this dir>`). IPC:
@@ -46,5 +47,10 @@ ShellRoot {
     IpcHandler {
         target: "osd"
         function brightness(): void { Feedback.readBrightness(); }
+    }
+    // A screen share asking what to share (wm's misu-share-pick).
+    IpcHandler {
+        target: "share"
+        function ask(dir: string): void { Share.ShareRequest.ask(dir); }
     }
 }
