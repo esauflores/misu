@@ -498,6 +498,7 @@ impl State {
             .collect();
         json!({
             "wayland_display": self.socket_name.to_string_lossy(),
+            "x_display": self.xwayland.as_ref().map(|x| x.display.clone()),
             "screens": screens,
             "workspaces": workspaces,
             "seats": seats,

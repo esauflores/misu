@@ -101,6 +101,11 @@ pub struct State {
     pub shots: Vec<crate::shot::Shot>,
     /// Capture by other programs (grim, screen sharing): see `capture.rs`.
     pub capture: crate::capture::Capture,
+    /// Kept alive for its global: clients scale and crop their buffers
+    /// (xwayland-satellite needs it).
+    pub _viewporter: smithay::wayland::viewporter::ViewporterState,
+    /// X11 apps' display, while xwayland-satellite serves one.
+    pub xwayland: Option<crate::xwayland::Xwayland>,
     /// Kept alive for its global: apps leave their title bars to wm.
     pub decorations: smithay::wayland::shell::xdg::decoration::XdgDecorationState,
 
@@ -134,6 +139,8 @@ impl State {
             shots: Vec::new(),
             capture: crate::capture::Capture::new(&dh),
             decorations: crate::decorations::new_state(&dh),
+            xwayland: None,
+            _viewporter: smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh),
             compositor_state: CompositorState::new::<Self>(&dh),
             xdg_shell_state: XdgShellState::new::<Self>(&dh),
             layer_shell_state: WlrLayerShellState::new::<Self>(&dh),

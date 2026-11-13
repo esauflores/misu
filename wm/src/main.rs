@@ -31,6 +31,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         std::env::set_var("WAYLAND_DISPLAY", &state.socket_name);
         std::env::set_var(ipc::ENV, &ipc_path);
     }
+    // X11 apps, and `DISPLAY` for children.
+    state.start_xwayland();
     tracing::info!(
         "listening on {:?}, control socket {}, {} seats",
         state.socket_name,

@@ -14,7 +14,8 @@ built around several seats on one screen:
   asking) a window covers the whole screen, bar and all. Apps leave
   their title bars to wm (GTK 4 ones keep theirs), and wm draws a 2px
   border round each window: the colour of the seat focusing it, from
-  the config file's `colors`. A menu holds
+  the config file's `colors`. X11 apps run through xwayland-satellite
+  (when it is installed) as ordinary windows. A menu holds
   the pointer and keyboard of the seat that opened it, and only that
   seat's.
 - **Animations are per seat**: a seat's changes animate when it has them on
@@ -163,7 +164,8 @@ it through the socket: focus and scrolling, a second seat launching on its own
 workspace off screen (through a forking launcher), two seats with their own
 views of one workspace, clicks after a scroll, a seat's animations on and off,
 grim capturing the screen and an unseen window, full screen over a bar,
-a dialog floating over its window, a menu's grab, workspaces, closing, reaping, a second screen that draws only its own
+a dialog floating over its window, a menu's grab, an X11 app and its
+dialog, workspaces, closing, reaping, a second screen that draws only its own
 windows, unplugging one (its workspace floats, its viewer moves), taking a
 floating workspace over, plugging it back, a new screen for an unseen seat,
 quitting, and that a wm inside another leaves the outer socket alone. It is skipped without `scroll` and `kitty`, and leaves
@@ -183,6 +185,7 @@ logs and a screenshot in `target/tmp/e2e/`.
 - `src/shot.rs`: screenshots of a seat's own view, drawn off screen
 - `src/capture.rs`: capture for other programs (grim, screen sharing)
 - `src/decorations.rs`: no title bars from apps; borders, and the colours
+- `src/xwayland.rs`: X11 apps, through xwayland-satellite
 - `src/winit.rs`: the nested backend and rendering
 - `src/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices
 - `src/layers.rs`: the layer shell: bars and launchers, their room and focus

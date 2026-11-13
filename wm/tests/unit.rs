@@ -687,6 +687,19 @@ mod options {
     }
 
     #[test]
+    fn x11_apps_are_on_unless_the_file_says_no() {
+        assert!(Config::default().xwayland);
+        let path = std::env::temp_dir().join(format!("wm-xwayland-config-{}.json", std::process::id()));
+        let parse = |source: &str| {
+            std::fs::write(&path, source).unwrap();
+            Config::from_args(["--config", path.to_str().unwrap()].map(String::from))
+        };
+        assert!(matches!(parse(r#"{"xwayland": false}"#), Ok(Command::Run(c)) if !c.xwayland));
+        assert!(parse(r#"{"xwayland": "no"}"#).is_err());
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn device_configuration_routes_names_and_validates_seats() {
         let path = std::env::temp_dir().join(format!("wm-device-config-{}.json", std::process::id()));
         let parse = |source: &str, seats: &str| {

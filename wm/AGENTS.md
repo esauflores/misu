@@ -96,6 +96,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/shot.rs` | a seat's view drawn off screen, as a PNG |
 | `src/capture.rs` | ext-image-copy-capture, foreign toplevel list |
 | `src/decorations.rs` | xdg-decoration (always server side), borders, `colors` |
+| `src/xwayland.rs` | xwayland-satellite: display, `DISPLAY`, restarts |
 | `src/winit.rs` | nested backend and rendering |
 | `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
 | `src/dmabuf.rs` | linux-dmabuf: formats, deferred imports |
@@ -184,7 +185,22 @@ Each border goes just before its window in the elements, so a window over
 it (full screen, a dialog) covers it. They replaced the focus marks.
 `colors` is a config key (defaults in `config.json`); `reload` applies it.
 Rounded corners and shadows (Misu's scroll look) need shaders: later.
-Left of step 5: XWayland.
+XWayland: through xwayland-satellite (Arch `extra`), not Smithay's X11
+WM: each X11 window arrives as an xdg toplevel of satellite's own
+connection, so layout, focus, borders, floating transients and capture
+need nothing X11-specific. `start_xwayland` (from `main`, before any
+thread) picks a display with neither `/tmp/.X11-unix/XN` nor a lock,
+sets `DISPLAY`, starts `xwayland-satellite :N`; a thread waits on it, and
+an exit after `STEADY` (10 s) restarts it, an earlier one turns X11 off.
+Satellite needs `wp_viewporter` (added; it panics without). Off with
+`"xwayland": false`; `wm msg tree` has `x_display`. X11 has one seat:
+all X11 windows open on satellite's launch seat and only that seat's
+input reaches them. Satellite connects at once, so X11 apps started in
+the first moments may miss it (niri hands satellite pre-bound sockets
+instead; not done). The e2e run opens GTK on its X11 backend with a
+transient dialog, and fails if satellite is installed but not serving.
+Step 5 is done but for rounded corners and shadows, and screen sharing
+through the portal (needs step 6's session).
 
 Known and left for now:
 
@@ -218,11 +234,13 @@ Misu's `AGENTS.md`) before the next.
    screen, so an agent can screenshot its own workspace (what
    `misu-ai-shot` does with scroll). Screencopy for it is step 5.
 5. **Screencopy and portals** (`ext-image-copy-capture`, implemented;
-   xdg-desktop-portal-wlr) for grim and screen sharing; **XWayland**;
+   xdg-desktop-portal-wlr) for grim and screen sharing;
    popup grabs per seat (implemented); server-side decorations (borders
-   implemented; rounded corners and shadows later);
+   implemented; rounded corners and shadows later); XWayland (implemented,
+   through xwayland-satellite);
    full screen (implemented).
 6. **Port Misu**: the session entry (`misu-session`), the `misu-ai-*`
    scripts to `wm msg seat N …` (most of their workarounds go away), the
    pointer plugin to wm's own seat pointers, and a `wm` module in place of
-   scroll's.
+   scroll's (with `xwayland-satellite` among its packages, and Misu's
+   palette written to wm's `colors`).

@@ -498,6 +498,7 @@ fn nested_in_headless_scroll() {
 
     dialog_floats(&wm, &dir);
     menu_grabs(&wm, &dir);
+    x11_apps(&wm, &dir);
 
     // Errors come back as errors.
     let reply = wm.try_msg("seat 7 focus left").unwrap();
@@ -826,3 +827,51 @@ GLib.MainLoop().run()
     kill(&pid);
 }
 
+/// An X11 app (GTK on its X11 backend) through xwayland-satellite: its
+/// window is an ordinary one in the layout, and its transient dialog floats
+/// over it.
+fn x11_apps(wm: &Wm, dir: &Path) {
+    let tree = wm.tree();
+    let Some(display) = tree["x_display"].as_str() else {
+        // There but not serving: it died (wm.log has why).
+        assert!(!on_path("xwayland-satellite"), "xwayland-satellite is on PATH but serves no display");
+        eprintln!("X11 apps: skipped, needs xwayland-satellite");
+        return;
+    };
+    assert!(display.starts_with(':'), "{display}");
+    let script = dir.join("x11.py");
+    fs::write(
+        &script,
+        r#"import gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk, GLib
+Gtk.init()
+parent = Gtk.Window(title="e2e-x11")
+parent.present()
+def dialog():
+    Gtk.Window(title="e2e-x11-dialog", transient_for=parent, default_width=320, default_height=180).present()
+    return False
+GLib.timeout_add(500, dialog)
+GLib.MainLoop().run()
+"#,
+    )
+    .unwrap();
+    let pid = spawn_tracked(wm, 0, dir, "x11", &format!("env GDK_BACKEND=x11 python3 {}", script.display()));
+    let titled = |tree: &Value, title: &str| -> Option<Value> {
+        tree["workspaces"].as_array()?.iter().flat_map(|ws| ws["windows"].as_array().unwrap().iter()).find(|w| w["title"] == title).cloned()
+    };
+    let (parent, dialog) = wait_for("the X11 window and its dialog", || {
+        let tree = wm.tree();
+        let (parent, dialog) = (titled(&tree, "e2e-x11")?, titled(&tree, "e2e-x11-dialog")?);
+        (dialog["width"].as_i64()? > 0).then_some((parent, dialog))
+    });
+    assert_eq!((parent["floating"].as_bool(), dialog["floating"].as_bool()), (Some(false), Some(true)), "{parent} {dialog}");
+    assert_eq!(parent["workspace"], dialog["workspace"]);
+    assert_eq!(focus(&wm.tree(), 0), dialog["id"].as_u64(), "the dialog has seat 0's focus");
+    wm.msg(&format!("seat 0 screenshot {}", dir.join("x11.png").display()));
+    kill(&pid);
+    wait_for("the X11 windows to go", || {
+        let tree = wm.tree();
+        (titled(&tree, "e2e-x11").is_none() && titled(&tree, "e2e-x11-dialog").is_none()).then_some(())
+    });
+}
