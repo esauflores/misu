@@ -16,7 +16,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let display: Display<State> = Display::new()?;
     let mut state = State::new(&mut event_loop, display, config);
 
-    wm::winit::init(&mut event_loop, &mut state)?;
+    let _backend = match state.config.backend {
+        wm::Backend::Winit => {
+            wm::winit::init(&mut event_loop, &mut state)?;
+            None
+        }
+        wm::Backend::Drm => Some(wm::udev::init(&mut event_loop, &mut state)?),
+    };
     let ipc_path = ipc::listen(&mut event_loop, &state.socket_name)?;
 
     // Children connect to us, not to the host, and can drive us.

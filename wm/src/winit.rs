@@ -4,7 +4,9 @@ use std::time::{Duration, Instant};
 
 use smithay::{
     backend::{
+        egl::EGLDevice,
         renderer::{
+            ImportDma,
             damage::OutputDamageTracker,
             element::{Kind, solid::SolidColorRenderElement},
             gles::GlesRenderer,
@@ -18,10 +20,13 @@ use smithay::{
 
 use crate::state::{CURSOR_SIZE, MARK_HEIGHT, NOBODY, ScreenId, State, new_output};
 
-const BACKGROUND: [f32; 4] = [0.08, 0.08, 0.1, 1.0];
+pub(crate) const BACKGROUND: [f32; 4] = [0.08, 0.08, 0.1, 1.0];
 
 pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), Box<dyn std::error::Error>> {
     let (mut backend, winit) = winit::init::<GlesRenderer>()?;
+    let node = EGLDevice::device_for_display(backend.renderer().egl_context().display())
+        .and_then(|device| device.try_get_render_node()).ok().flatten();
+    state.dmabuf.enable(&state.display_handle, 0, node, backend.renderer().dmabuf_formats())?;
     let output = new_output("winit", "nested", "0", backend.window_size());
     let _global = output.create_global::<State>(&state.display_handle);
     output.change_current_state(None, Some(Transform::Flipped180), None, Some((0, 0).into()));
@@ -37,6 +42,7 @@ pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), 
         WinitEvent::Input(event) => state.process_input_event(event, screen),
         WinitEvent::Redraw => {
             let now = Instant::now();
+            state.dmabuf.process_imports(|dmabuf| backend.renderer().import_dmabuf(dmabuf, None).is_ok());
             state.update_space(now);
             // Unplugged (`wm msg screen-remove`), it shows only the background.
             let overlay = overlay(state, screen, now);
@@ -84,7 +90,7 @@ pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), 
 
 /// The pointers of the seats on the screen's workspace, and a mark in each
 /// seat's colour above the window it focuses there, in screen coordinates.
-fn overlay(state: &mut State, screen: ScreenId, now: Instant) -> Vec<SolidColorRenderElement> {
+pub(crate) fn overlay(state: &mut State, screen: ScreenId, now: Instant) -> Vec<SolidColorRenderElement> {
     let mut elements = Vec::new();
     let Some((shown, viewer)) = state.shown_on(screen) else { return elements };
     let viewer = viewer.unwrap_or(NOBODY);

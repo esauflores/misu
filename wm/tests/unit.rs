@@ -324,7 +324,7 @@ mod animation {
 
 mod screens {
     use smithay::output::{Mode, Output, PhysicalProperties, Subpixel};
-    use wm::state::{Screen, ScreenId, WorkspaceId, identity, identity_of, returning};
+    use wm::state::{ConnectorId, Screen, ScreenId, WorkspaceId, identity, identity_of, returning};
 
     fn output(connector: &str, make: &str, model: &str, serial: &str) -> Output {
         Output::new(
@@ -380,6 +380,19 @@ mod screens {
         s.set_output(back.clone());
         assert_eq!(s.output, back);
         assert_eq!(s.space.outputs().collect::<Vec<_>>(), vec![&back]);
+    }
+
+    #[test]
+    fn gpu_renumbering_preserves_a_monitor_without_a_serial() {
+        let before = output("card1-Virtual-1", "Red Hat", "QEMU", "");
+        before.user_data().insert_if_missing(|| ConnectorId("pci-0000:00:01.0-Virtual-1".into()));
+        let floating = [screen(1, before)];
+        let back = output("card0-Virtual-1", "Red Hat", "QEMU", "");
+        back.user_data().insert_if_missing(|| ConnectorId("pci-0000:00:01.0-Virtual-1".into()));
+        assert_eq!(returning(&identity_of(&back, []), &floating), Some(ScreenId(1)));
+        let other_gpu = output("card1-Virtual-1", "Red Hat", "QEMU", "");
+        other_gpu.user_data().insert_if_missing(|| ConnectorId("pci-0000:00:02.0-Virtual-1".into()));
+        assert_eq!(returning(&identity_of(&other_gpu, []), &floating), None);
     }
 
     #[test]
@@ -529,7 +542,7 @@ mod events {
 
 mod options {
     use smithay::input::keyboard::{Keysym, ModifiersState, keysyms};
-    use wm::{Command, Config, Modifier, input::binding};
+    use wm::{Backend, Command, Config, Modifier, input::binding};
 
     fn args(s: &str) -> Result<Command, String> {
         Config::from_args(s.split_whitespace().map(String::from))
@@ -537,13 +550,45 @@ mod options {
 
     #[test]
     fn options() {
+        assert_eq!(Config::default().backend, Backend::Winit);
         let Ok(Command::Run(c)) = args("--mod super --seats 3 -c kitty") else { panic!() };
         assert_eq!(c.modifier, Modifier::Super);
         assert_eq!(c.seats, 3);
         assert_eq!(c.command.as_deref(), Some("kitty"));
-        for bad in ["--seats 0", "--seats", "--mod hyper", "--terminal foot", "--what"] {
+        assert!(matches!(args("--backend drm"), Ok(Command::Run(Config { backend: Backend::Drm, .. }))));
+        assert!(matches!(args("--backend winit"), Ok(Command::Run(Config { backend: Backend::Winit, .. }))));
+        for bad in ["--seats 0", "--seats", "--mod hyper", "--terminal foot", "--what", "--backend", "--backend tty", "--config"] {
             assert!(args(bad).is_err(), "{bad}");
         }
+    }
+
+    #[test]
+    fn device_configuration_routes_names_and_validates_seats() {
+        let path = std::env::temp_dir().join(format!("wm-device-config-{}.json", std::process::id()));
+        let parse = |source: &str, seats: &str| {
+            std::fs::write(&path, source).unwrap();
+            Config::from_args(["--config", path.to_str().unwrap(), "--seats", seats].map(String::from))
+        };
+        let Ok(Command::Run(c)) = parse(r#"{"devices":{"USB Keyboard":2,"USB Mouse":1}}"#, "3") else { panic!() };
+        assert_eq!(c.device_seat("USB Keyboard"), 2);
+        assert_eq!(c.device_seat("USB Mouse"), 1);
+        assert_eq!(c.device_seat("usb mouse"), 0);
+        assert_eq!(c.device_seat("unconfigured"), 0);
+        for bad in [
+            r#"{"devices":{"USB Keyboard":3}}"#,
+            r#"{"devices":{"USB Keyboard":-1}}"#,
+            r#"{"devices":{"USB Keyboard":"1"}}"#,
+            r#"{"devices":{"USB Keyboard":1.5}}"#,
+            r#"{"devices":{" ":1}}"#,
+            r#"{"devices":[]}"#,
+            r#"{"device":{}}"#,
+            "[]", "invalid",
+        ] {
+            assert!(parse(bad, "3").is_err(), "{bad}");
+        }
+        assert!(parse("{}", "1").is_ok());
+        std::fs::remove_file(&path).unwrap();
+        assert!(Config::from_args(["--config".into(), path.to_string_lossy().into_owned()]).is_err());
     }
 
     #[test]
@@ -563,5 +608,103 @@ mod options {
                 assert_eq!(binding(Modifier::Alt, &m, Keysym::new(sym)), None);
             }
         }
+    }
+}
+
+mod input {
+    use wm::input::{clamp_pointer, virtual_terminal};
+
+    #[test]
+    fn vt_shortcuts_belong_to_drm() {
+        use smithay::input::keyboard::{Keysym, ModifiersState, keysyms};
+        use wm::Backend;
+        let mods = ModifiersState { ctrl: true, alt: true, ..Default::default() };
+        for (sym, vt) in [(keysyms::KEY_F1, 1), (keysyms::KEY_F12, 12)] {
+            assert_eq!(virtual_terminal(Backend::Drm, &mods, Keysym::new(sym)), Some(vt));
+            assert_eq!(virtual_terminal(Backend::Winit, &mods, Keysym::new(sym)), None);
+        }
+        assert_eq!(virtual_terminal(Backend::Drm, &mods, Keysym::new(keysyms::KEY_F13)), None);
+        assert_eq!(virtual_terminal(Backend::Drm, &ModifiersState::default(), Keysym::new(keysyms::KEY_F1)), None);
+    }
+
+    #[test]
+    fn keyboards_keep_seats_and_sources_separate() {
+        use smithay::{backend::input::{InputTime, KeyState}, input::keyboard::{KeyboardSource, Keysym, keysyms}, reexports::{calloop::EventLoop, wayland_server::Display}};
+        use wm::{Backend, Config, state::State};
+        // Give this backend-free State its own socket directory without
+        // changing the environment of parallel tests.
+        if std::env::var_os("WM_TEST_INPUT_CHILD").is_none() {
+            use std::os::unix::fs::PermissionsExt;
+            let runtime = std::env::temp_dir().join(format!("wm-input-{}", std::process::id()));
+            std::fs::create_dir(&runtime).unwrap();
+            std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let output = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", "input::keyboards_keep_seats_and_sources_separate", "--nocapture"])
+                .env("WM_TEST_INPUT_CHILD", "1").env("XDG_RUNTIME_DIR", &runtime).output().unwrap();
+            std::fs::remove_dir_all(runtime).unwrap();
+            assert!(output.status.success(), "{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+            return;
+        }
+        let mut event_loop = EventLoop::try_new().unwrap();
+        let mut state = State::new(&mut event_loop, Display::new().unwrap(), Config { backend: Backend::Drm, ..Default::default() });
+        let keyboard = state.seats[0].seat.get_keyboard().unwrap();
+        let key = |sym| keyboard.keycode_for_keysym(Keysym::new(sym)).unwrap();
+        let source = KeyboardSource::new_auxiliary();
+        let other = KeyboardSource::new_auxiliary();
+        let time = InputTime::from_millis(1);
+        let (ctrl, alt, f1, a) = (key(keysyms::KEY_Control_L), key(keysyms::KEY_Alt_L), key(keysyms::KEY_F1), key(keysyms::KEY_a));
+        for code in [ctrl, alt] { assert_eq!(state.keyboard_input(0, source, code, KeyState::Pressed, time), None); }
+        assert_eq!(state.keyboard_input(0, source, f1, KeyState::Pressed, time), Some(1));
+        assert!(state.seats[0].intercepted_keys.contains(&f1));
+        for code in [ctrl, alt, f1] { assert_eq!(state.keyboard_input(0, source, code, KeyState::Released, time), None); }
+        assert!(state.seats[0].intercepted_keys.is_empty());
+        assert!(keyboard.pressed_keys().is_empty());
+        for device in [source, other] { state.keyboard_input(0, device, a, KeyState::Pressed, time); }
+        keyboard.release_source(&mut state, source);
+        assert!(keyboard.pressed_keys().contains(&a));
+        assert!(state.seats[1].seat.get_keyboard().unwrap().pressed_keys().is_empty());
+        keyboard.release_source(&mut state, other);
+        assert!(keyboard.pressed_keys().is_empty());
+        state.config.backend = Backend::Winit;
+        for code in [ctrl, alt, f1] { assert_eq!(state.keyboard_input(1, source, code, KeyState::Pressed, time), None); }
+        assert!(state.seats[1].intercepted_keys.is_empty());
+    }
+
+    #[test]
+    fn physical_pointer_stays_inside_each_screen() {
+        let size = (1280, 720).into();
+        assert_eq!(clamp_pointer((-10.0, 900.0).into(), size), (0.0, 719.0).into());
+        assert_eq!(clamp_pointer((1400.0, -1.0).into(), size), (1279.0, 0.0).into());
+        assert_eq!(clamp_pointer((100.5, 200.25).into(), size), (100.5, 200.25).into());
+        assert_eq!(clamp_pointer((10.0, 20.0).into(), (1, 1).into()), (0.0, 0.0).into());
+    }
+}
+
+
+mod dmabuf {
+    use smithay::{backend::{allocator::{Format, Fourcc, Modifier}, drm::DrmNode}, reexports::{rustix::fs::makedev, wayland_server::Display}};
+    use wm::{dmabuf::DmabufSupport, state::State};
+
+    #[test]
+    fn gpu_global_is_withdrawn_and_recreated_on_return() {
+        let display = Display::<State>::new().unwrap();
+        let dh = display.handle();
+        let mut support = DmabufSupport::default();
+        let node = DrmNode::from_dev_id(makedev(226, 128)).unwrap();
+        let format = Format { code: Fourcc::Argb8888, modifier: Modifier::Linear };
+        assert!(support.enable(&dh, 1, Some(node), []).unwrap().is_none());
+        assert_eq!(support.device, None, "no formats means no usable import device");
+        let original = support.enable(&dh, 1, Some(node), [format]).unwrap().unwrap();
+        assert_eq!(support.enable(&dh, 2, None, [format]).unwrap(), Some(original));
+        assert_eq!(support.device, Some(1), "a second GPU must not replace a live global's importer");
+        assert_eq!(support.disable(&dh), Some(original));
+        assert_eq!(support.device, None);
+        assert!(support.disable(&dh).is_none());
+        let returned = support.enable(&dh, 2, Some(node), [format]).unwrap().unwrap();
+        assert_ne!(returned, original, "returning GPUs publish fresh bindings");
+        assert_eq!(support.device, Some(2));
+        support.state.destroy_global::<State>(&dh, original);
+        let live = support.disable(&dh).unwrap();
+        support.state.destroy_global::<State>(&dh, live);
     }
 }

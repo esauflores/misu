@@ -48,6 +48,46 @@ colour, and a bar of that colour over the window it has focused. Clicking
 focuses without scrolling. Seats start on workspaces of their own (seat0 on
 1, seat1 on 2, …), and each screen shows one seat's.
 
+## Run on a VT (DRM/libinput)
+
+The direct backend uses libseat for device access, udev for GPU and monitor
+hotplug, libinput for devices, and a damage-tracked DRM compositor per output.
+Winit remains the default, so existing nested runs and headless tests keep
+using it. The direct backend has been validated in Misu's KVM guest with
+virtio-gpu.
+
+Build dependencies on Arch include `libinput`, `seatd` (libseat), `libdisplay-info`,
+`libdrm`, `mesa`, `libglvnd`, `systemd-libs` and `pkgconf`. From an active VT
+login with a logind session (or a configured seatd):
+
+```sh
+wm --backend drm --seats 2 --config devices.json -c kitty
+```
+
+Devices use seat 0 unless their exact libinput name appears in the JSON file:
+
+```json
+{"devices":{"USB Keyboard":1,"USB Mouse":1}}
+```
+
+Names and assigned seats are logged when devices connect; seat indices start
+at zero and must be below `--seats`. There are still no general key bindings:
+use `wm msg` from the terminal. On DRM, Ctrl+Alt+F1 through F12 switch VTs.
+Session pause and device removal release held input, and returning to the VT
+restores scanout. Monitor unplug preserves its screen number and workspaces.
+Clients can hand over GPU buffers through linux-dmabuf (as Mesa's EGL does) as
+well as `wl_shm`.
+
+VM checks cover kitty scanout, keyboard and absolute/relative pointer input,
+device assignment to separate seats, two outputs, input/connector/GPU
+unplug and replug, all outputs disconnected, VT recovery, and clean shutdown.
+A regression test covers GPU card renumbering without changing screen IDs.
+Blank output submitted zero frames over a two-second idle check. With
+`RUST_LOG=wm=trace`, submissions appear as `DRM frame queued`. A live mode
+change keeps the screen number. wm is made for one GPU driving every screen;
+rendering across two GPUs isn't supported. The nested e2e test does not
+exercise the direct backend, but it does check kitty's dmabufs are imported.
+
 ## Control socket
 
 The socket is `$XDG_RUNTIME_DIR/wm.<wayland socket>.sock`. Everything
@@ -97,12 +137,12 @@ logs and a screenshot in `target/tmp/e2e/`.
 - `src/ipc.rs`: the control socket, `wm msg`, and what `subscribe` hears
 - `src/input.rs`: bindings, input routing, and the actions they run
 - `src/winit.rs`: the nested backend and rendering
+- `src/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices
 - `src/handlers.rs`: Wayland protocol handlers
 - `tests/unit.rs`, `tests/e2e.rs`: see Tests
 
 ## Next
 
-- A DRM/libinput backend for real hardware, with devices assigned to seats
 - Layer shell (the bar), screencopy, portals, a sway-compatible IPC
 - Column widths, full screen, popups and grabs per seat
 - Rendering a seat that isn't shown, for its screenshots (screencopy)

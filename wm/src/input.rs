@@ -4,17 +4,17 @@
 use smithay::{
     backend::input::{
         AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent, InputTime,
-        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent,
+        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
     },
     input::{
-        keyboard::{FilterResult, Keysym, ModifiersState},
+        keyboard::{FilterResult, Keycode, KeyboardSource, Keysym, ModifiersState, keysyms},
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
-    utils::{Logical, Point, SERIAL_COUNTER},
+    utils::{Logical, Point, Size, SERIAL_COUNTER},
 };
 
 use crate::{
-    Modifier,
+    Backend, Modifier,
     layout::Direction,
     state::{LAUNCH_ENV, ScreenId, State},
 };
@@ -47,36 +47,44 @@ pub fn binding(modifier: Modifier, mods: &ModifiersState, _sym: Keysym) -> Optio
     None
 }
 
+/// Keep physical-device motion inside its seat's screen, including tiny modes.
+pub fn clamp_pointer(pos: Point<f64, Logical>, size: Size<i32, Logical>) -> Point<f64, Logical> {
+    (pos.x.clamp(0.0, (size.w - 1).max(0) as f64), pos.y.clamp(0.0, (size.h - 1).max(0) as f64)).into()
+}
+
+/// VT switching belongs to the direct session; nested shortcuts go to clients.
+pub fn virtual_terminal(backend: Backend, mods: &ModifiersState, sym: Keysym) -> Option<i32> {
+    (backend == Backend::Drm && mods.ctrl && mods.alt && (keysyms::KEY_F1..=keysyms::KEY_F12).contains(&sym.raw()))
+        .then(|| (sym.raw() - keysyms::KEY_F1 + 1) as i32)
+}
+
+enum KeyboardAction {
+    Run(Action),
+    ChangeVt(i32),
+    Suppress,
+}
+
 impl State {
     /// Input from the host's devices, on `screen`, for the seat it drives.
     pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>, screen: ScreenId) {
         let seat = self.seats.active;
+        self.process_seat_input_event(event, seat, screen);
+    }
+
+    /// Input from a device assigned to a particular user seat.
+    pub fn process_seat_input_event<I: InputBackend>(&mut self, event: InputEvent<I>, seat: usize, screen: ScreenId) {
         match event {
             InputEvent::Keyboard { event, .. } => {
-                let modifier = self.config.modifier;
-                let pressed = event.state() == KeyState::Pressed;
-                let keyboard = self.seats[seat].seat.get_keyboard().unwrap();
-                let action = keyboard.input(
-                    self,
-                    event.key_code(),
-                    event.state(),
-                    SERIAL_COUNTER.next_serial(),
-                    Event::time(&event),
-                    |_, mods, handle| {
-                        // Shift+digits give symbols, so match on the unshifted key.
-                        let sym = handle.raw_latin_sym_or_raw_current_sym().unwrap_or(handle.modified_sym());
-                        match binding(modifier, mods, sym) {
-                            Some(action) if pressed => FilterResult::Intercept(action),
-                            _ => FilterResult::Forward,
-                        }
-                    },
-                );
-                if let Some(action) = action {
-                    self.run(seat, action);
-                }
+                self.keyboard_input(seat, KeyboardSource::MAIN, event.key_code(), event.state(), Event::time(&event));
             }
             InputEvent::PointerMotionAbsolute { event, .. } => {
-                let pos = event.position_transformed(self.screen_size(screen));
+                let size = self.screen_size(screen);
+                let pos = clamp_pointer(event.position_transformed(size), size);
+                self.pointer_motion(seat, pos, Event::time(&event));
+            }
+            InputEvent::PointerMotion { event, .. } => {
+                let pointer = self.seats[seat].seat.get_pointer().unwrap();
+                let pos = clamp_pointer(pointer.current_location() + event.delta(), self.screen_size(screen));
                 self.pointer_motion(seat, pos, Event::time(&event));
             }
             InputEvent::PointerButton { event, .. } => {
@@ -103,6 +111,39 @@ impl State {
             }
             _ => {}
         }
+    }
+
+    /// Returns a requested VT switch for the DRM backend to execute.
+    pub fn keyboard_input(&mut self, seat: usize, source: KeyboardSource, keycode: Keycode, key_state: KeyState, time: InputTime) -> Option<i32> {
+        let modifier = self.config.modifier;
+        let backend = self.config.backend;
+        let keyboard = self.seats[seat].seat.get_keyboard().unwrap();
+        let action = keyboard.input_from_source(source, self, keycode, key_state, SERIAL_COUNTER.next_serial(), time, |state, mods, handle| {
+            // Remember intercepted presses so releases stay intercepted even
+            // when Ctrl/Alt was released before the function key.
+            if key_state == KeyState::Released && state.seats[seat].intercepted_keys.remove(&keycode) {
+                return FilterResult::Intercept(KeyboardAction::Suppress);
+            }
+            // Shift+digits give symbols, so match on the unshifted key.
+            let sym = handle.raw_latin_sym_or_raw_current_sym().unwrap_or(handle.modified_sym());
+            if key_state == KeyState::Pressed {
+                if let Some(vt) = virtual_terminal(backend, mods, sym) {
+                    state.seats[seat].intercepted_keys.insert(keycode);
+                    return FilterResult::Intercept(KeyboardAction::ChangeVt(vt));
+                }
+                if let Some(action) = binding(modifier, mods, sym) {
+                    state.seats[seat].intercepted_keys.insert(keycode);
+                    return FilterResult::Intercept(KeyboardAction::Run(action));
+                }
+            }
+            FilterResult::Forward
+        });
+        match action {
+            Some(KeyboardAction::Run(action)) => self.run(seat, action),
+            Some(KeyboardAction::ChangeVt(vt)) => return Some(vt),
+            _ => {}
+        }
+        None
     }
 
     pub fn pointer_motion(&mut self, seat: usize, pos: Point<f64, Logical>, time: InputTime) {

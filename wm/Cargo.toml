@@ -15,7 +15,11 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 git = "https://github.com/Smithay/smithay.git"
 rev = "9ff2c5a410e91c592e19d6fb126c299308dce119"
 default-features = false
-features = ["backend_winit", "wayland_frontend", "desktop"]
+features = ["backend_winit", "wayland_frontend", "desktop", "backend_drm", "backend_gbm", "backend_udev", "backend_libinput", "backend_session_libseat"]
+
+[dependencies.smithay-drm-extras]
+git = "https://github.com/Smithay/smithay.git"
+rev = "9ff2c5a410e91c592e19d6fb126c299308dce119"
 
 [profile.dev.package."*"]
 opt-level = 2

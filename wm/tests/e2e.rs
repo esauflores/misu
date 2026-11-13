@@ -209,14 +209,15 @@ fn nested_in_headless_scroll() {
     // $WM_SOCK, and stays its own.
     let outer = dir.join("outer.sock");
     let _outer_listener = UnixListener::bind(&outer).unwrap();
+    let log = fs::File::create(dir.join("wm.log")).unwrap();
     let wm_process = Command::new(env!("CARGO_BIN_EXE_wm"))
-        .args(["--seats", "2"])
+        .args(["--backend", "winit", "--seats", "2"])
         .env("XDG_RUNTIME_DIR", &runtime)
         .env("WAYLAND_DISPLAY", &host_display)
         .env("WM_SOCK", &outer)
-        .env("RUST_LOG", "info")
-        .stdout(Stdio::null())
-        .stderr(fs::File::create(dir.join("wm.log")).unwrap())
+        .env("RUST_LOG", "info,wm::dmabuf=trace")
+        .stdout(log.try_clone().unwrap())
+        .stderr(log)
         .process_group(0)
         .spawn()
         .expect("start wm");
@@ -459,4 +460,9 @@ fn nested_in_headless_scroll() {
     assert!(exited.success(), "wm exited with {exited}");
     assert!(!wm.sock.exists(), "the control socket is removed");
     assert!(outer.exists(), "the outer socket stays");
+
+    // kitty draws with the GPU (Mesa EGL), so its buffers came as dmabufs.
+    let log = fs::read_to_string(dir.join("wm.log")).unwrap();
+    assert!(log.contains("dmabuf import accepted"), "kitty's dmabufs were imported");
+    assert!(!log.contains("dmabuf import rejected"), "no dmabuf was rejected");
 }

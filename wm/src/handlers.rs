@@ -16,7 +16,8 @@ use smithay::{
     utils::{Rectangle, Serial},
     wayland::{
         buffer::BufferHandler,
-        compositor::{CompositorClientState, CompositorHandler, CompositorState, get_parent, is_sync_subsurface},
+        compositor::{CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, BufferAssignment, add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states},
+        dmabuf::get_dmabuf,
         output::OutputHandler,
         pointer_constraints::PointerConstraintsHandler,
         selection::{
@@ -92,6 +93,31 @@ impl CompositorHandler for State {
 
     fn client_compositor_state<'a>(&self, client: &'a Client) -> &'a CompositorClientState {
         &client.get_data::<ClientState>().unwrap().compositor_state
+    }
+
+    fn new_surface(&mut self, surface: &WlSurface) {
+        // Implicit dma-buf fences must finish before the commit becomes visible.
+        // Follow Smithay Anvil/niri: wait through calloop, never in the renderer.
+        add_pre_commit_hook::<Self, _>(surface, |state, _, surface| {
+            let dmabuf = with_states(surface, |data| {
+                data.cached_state.get::<SurfaceAttributes>().pending().buffer.as_ref()
+                    .and_then(|buffer| match buffer {
+                        BufferAssignment::NewBuffer(buffer) => get_dmabuf(buffer).cloned().ok(),
+                        _ => None,
+                    })
+            });
+            if let Some(dmabuf) = dmabuf
+                && let Ok((blocker, source)) = dmabuf.generate_blocker(smithay::reexports::calloop::Interest::READ)
+                && let Some(client) = surface.client()
+                && state.loop_handle.insert_source(source, move |_, _, state| {
+                    let dh = state.display_handle.clone();
+                    state.client_compositor_state(&client).blocker_cleared(state, &dh);
+                    Ok(())
+                }).is_ok()
+            {
+                add_blocker(surface, blocker);
+            }
+        });
     }
 
     fn commit(&mut self, surface: &WlSurface) {

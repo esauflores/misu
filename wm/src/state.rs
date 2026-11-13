@@ -9,8 +9,8 @@
 //!
 //! Nested in another compositor there is only one set of host input devices,
 //! so it drives one seat at a time (`Seats::active`); the others keep their
-//! focus and pointer where they left them. On real hardware each seat will
-//! get its own devices instead.
+//! focus and pointer where they left them. On real hardware devices are
+//! assigned to individual seats instead.
 //!
 //! A screen has a number (`ScreenId`, 1, 2, …) that everything refers to,
 //! and an identity (make, model and serial from the monitor's EDID) used only
@@ -23,7 +23,7 @@
 //! seat looking at it (`viewer`), which is always one of its own.
 
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ffi::OsString,
     sync::{
         Arc,
@@ -35,10 +35,10 @@ use std::{
 use smithay::{
     backend::renderer::{element::solid::SolidColorBuffer, utils::with_renderer_surface_state},
     desktop::{PopupManager, Space, Window, WindowSurfaceType, space::SpaceElement},
-    input::{Seat, SeatState},
+    input::{Seat, SeatState, keyboard::Keycode},
     output::{Mode as OutputMode, Output, PhysicalProperties, Subpixel},
     reexports::{
-        calloop::{EventLoop, Interest, LoopSignal, Mode, PostAction, generic::Generic},
+        calloop::{EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction, generic::Generic},
         wayland_server::{
             Display, DisplayHandle, Resource, backend::ClientData, protocol::wl_surface::WlSurface,
         },
@@ -74,6 +74,8 @@ pub struct State {
     pub socket_name: OsString,
     pub display_handle: DisplayHandle,
     pub loop_signal: LoopSignal,
+    pub loop_handle: LoopHandle<'static, Self>,
+    pub dmabuf: crate::dmabuf::DmabufSupport,
 
     pub screens: HashMap<ScreenId, Screen>,
     /// The workspaces, the source of truth for where windows are.
@@ -99,12 +101,14 @@ pub struct State {
 }
 
 impl State {
-    pub fn new(event_loop: &mut EventLoop<Self>, display: Display<Self>, config: Config) -> Self {
+    pub fn new(event_loop: &mut EventLoop<'static, Self>, display: Display<Self>, config: Config) -> Self {
         let dh = display.handle();
         let mut state = Self {
             start_time: Instant::now(),
             socket_name: Self::listen(display, event_loop),
             loop_signal: event_loop.get_signal(),
+            loop_handle: event_loop.handle(),
+            dmabuf: crate::dmabuf::DmabufSupport::default(),
             screens: HashMap::new(),
             workspaces: HashMap::new(),
             unmapped: Vec::new(),
@@ -639,6 +643,7 @@ pub const MARK_HEIGHT: i32 = 4;
 
 pub struct SeatData {
     pub seat: Seat<State>,
+    pub intercepted_keys: HashSet<Keycode>,
     /// The workspace it is on.
     pub workspace: WorkspaceId,
     pub focus: Option<Window>,
@@ -666,6 +671,7 @@ impl Seats {
         let color = COLORS[index % COLORS.len()];
         self.list.push(SeatData {
             seat,
+            intercepted_keys: HashSet::new(),
             workspace,
             focus: None,
             animate: true,
@@ -706,12 +712,17 @@ pub fn identity(make: &str, model: &str, serial: &str, connector: &str, twin: bo
     if serial.is_empty() || twin { format!("{base} @{connector}") } else { base }
 }
 
+/// A physical connector's stable device path, independent of DRM card numbers.
+pub struct ConnectorId(pub String);
+
 /// The identity `output` gets, given the screens connected now.
 pub fn identity_of<'a>(output: &Output, connected: impl IntoIterator<Item = &'a Screen>) -> String {
     let p = output.physical_properties();
-    let alone = identity(&p.make, &p.model, &p.serial_number, &output.name(), false);
+    let name = output.name();
+    let connector = output.user_data().get::<ConnectorId>().map_or(name.as_str(), |id| id.0.as_str());
+    let alone = identity(&p.make, &p.model, &p.serial_number, connector, false);
     let twin = connected.into_iter().any(|s| s.identity == alone);
-    identity(&p.make, &p.model, &p.serial_number, &output.name(), twin)
+    identity(&p.make, &p.model, &p.serial_number, connector, twin)
 }
 
 /// The floating screen with this identity, if any: the monitor is back.

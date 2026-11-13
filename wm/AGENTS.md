@@ -71,6 +71,8 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/ipc.rs` | socket, `wm msg`, `tree`, events |
 | `src/input.rs` | input routing, `Action`, `binding()` (empty on purpose) |
 | `src/winit.rs` | nested backend and rendering |
+| `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
+| `src/dmabuf.rs` | linux-dmabuf: formats, deferred imports |
 | `src/handlers.rs` | Wayland protocol handlers |
 | `tests/unit.rs`, `tests/e2e.rs` | tests |
 
@@ -79,11 +81,30 @@ mise install                                   # Rust, pinned in mise.toml
 Works nested (winit): several seats, per-seat views and animations, focus
 and moves, workspaces made on demand, move-to-workspace, close, screens
 (virtual ones through `screen-new`), unplug and replug, `take-workspace`,
-launch tracking, the control socket with `tree` and `subscribe`. Tests: 36
+launch tracking, the control socket with `tree` and `subscribe`. Tests: 42
 unit plus the e2e run; clippy clean.
+
+Step 1 implementation: explicit `--backend drm` (winit remains the default),
+libseat session pause/resume and VT switching, libinput devices mapped by
+exact name through `--config FILE`, GPU/connector hotplug, and per-output DRM
+compositors with damage tracking. Validated in Misu's KVM guest with virtio-gpu:
+kitty, keyboard, absolute/relative pointers, seat mapping, two outputs,
+input/connector/GPU hotplug, all outputs disconnected, VT recovery, idle
+damage and clean shutdown. GPU connector keys use stable device paths, so
+DRM card renumbering preserves screen IDs. Live mode changes keep the screen
+ID (VM: 1366x768 to 1024x768 and back), and at poweroff wm stops before
+seatd. linux-dmabuf client buffers (`src/dmabuf.rs`) work: the e2e run checks
+kitty's Mesa dmabufs are imported on this laptop's Intel GPU. wm targets this
+laptop: one Intel GPU drives the panel and every port, so multi-GPU is out of
+scope (hotplug of a GPU is handled, rendering across two is not). Step 2 is
+next.
 
 Known and left for now:
 
+- The pinned Smithay libseat notifier unwraps dispatch errors: losing seatd
+  can panic (observed during guest poweroff with wm still active). Stop wm
+  before seatd; orderly IPC quit passes. Fixing daemon-loss handling needs
+  a Smithay change.
 - An unseen seat's view of a workspace can animate for 250 ms when a window
   closes or the screen resizes there (`Workspace::arrange` clamps all views
   with the shown seat's flag); fixing it needs the viewer in the layout.
@@ -96,7 +117,7 @@ Known and left for now:
 In order; each step tested in Misu's KVM VM (`/opt/misu/test/vm.sh`, see
 Misu's `AGENTS.md`) before the next.
 
-1. **DRM/libinput backend**: real screens and hotplug (screen ids and
+1. **DRM/libinput backend (implemented; KVM validated)**: real screens and hotplug (screen ids and
    floating already handle it), libinput devices assigned to seats (one seat
    by default; a config line puts a keyboard or mouse on another), a session
    through libseat, rendering per output with damage tracking instead of a
