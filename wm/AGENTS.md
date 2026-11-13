@@ -99,6 +99,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/cursor.rs` | xcursor theme, per-seat cursors, tints |
 | `src/settings.rs` | `input`: xkb, repeat, libinput options, focus follows mouse |
 | `src/screens.rs` | `screens`: modes, order, off, laptop panels |
+| `src/clipboard.rs` | primary selection, wlr/ext data control |
 | `src/lock.rs` | ext-session-lock: lock surfaces, input and drawing while locked |
 | `src/xwayland.rs` | xwayland-satellite: display, `DISPLAY`, restarts |
 | `src/winit.rs` | nested backend and rendering |
@@ -242,11 +243,16 @@ by Misu's install.sh):
   its own locker (`tests/support/locker.rs`, wayland-client) through lock,
   refusal, crash, takeover and unlock. Not yet: a subscription event for
   the lock (`tree` has `locked`).
-- Next:
-  data-control (cliphist), gamma (wlsunset), idle notify/inhibit,
+- Clipboard (done): `clipboard.rs` adds primary selection and both data
+  controls (wlr, ext, with primary) over smithay's per-seat selections;
+  `focus_changed` sets the primary focus with the data device's. History
+  stays out of wm (cliphist from the session's `startup`). The e2e run
+  copies and pastes per seat with wl-clipboard.
+- Next: idle notify,
   xdg-activation, layout commands (float toggle, width presets, focus
   previous, overview, jump), agent-seat commands (keys, typing, scroll,
-  right click, focus a window), config includes.
+  right click, focus a window), config includes. Later: gamma
+  (`wlr-gamma-control`, for wlsunset; not needed yet).
 XWayland: through xwayland-satellite (Arch `extra`), not Smithay's X11
 WM: each X11 window arrives as an xdg toplevel of satellite's own
 connection, so layout, focus, borders, floating transients and capture

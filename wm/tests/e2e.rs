@@ -516,6 +516,7 @@ fn nested_in_headless_scroll() {
     dialog_floats(&wm, &dir);
     menu_grabs(&wm, &dir);
     x11_apps(&wm, &dir);
+    clipboards(&wm, &runtime);
     session_lock(&wm, &dir, &runtime);
 
     // Errors come back as errors.
@@ -963,3 +964,47 @@ fn session_lock(wm: &Wm, dir: &Path, runtime: &Path) {
     assert_eq!(focus(&wm.tree(), 0), focused, "focus is as it was");
     assert_eq!(wm.try_msg("seat 0 focus left").unwrap()["ok"], true);
 }
+
+/// Each seat has its own clipboard and primary selection, which wl-copy and
+/// wl-paste reach through data control, with no window.
+fn clipboards(wm: &Wm, runtime: &Path) {
+    if !on_path("wl-copy") || !on_path("wl-paste") {
+        eprintln!("clipboards skipped: needs wl-clipboard");
+        return;
+    }
+    let display = wm.sock.file_name().unwrap().to_string_lossy();
+    let display = display.strip_prefix("wm.").unwrap().strip_suffix(".sock").unwrap().to_string();
+    let tree = wm.tree();
+    let name = |s: usize| seat(&tree, s)["name"].as_str().unwrap().to_string();
+    let run = |program: &str, args: &[&str]| {
+        let out = Command::new(program)
+            .args(args)
+            .env("XDG_RUNTIME_DIR", runtime)
+            .env("WAYLAND_DISPLAY", &display)
+            .stdin(Stdio::null())
+            .stderr(Stdio::null())
+            .output()
+            .unwrap();
+        (out.status.success(), String::from_utf8_lossy(&out.stdout).into_owned())
+    };
+    let (seat0, seat1) = (name(0), name(1));
+    assert!(run("wl-copy", &["--seat", &seat0, "copied by seat 0"]).0);
+    assert!(run("wl-copy", &["--seat", &seat0, "--primary", "selected by seat 0"]).0);
+    assert!(run("wl-copy", &["--seat", &seat1, "copied by seat 1"]).0);
+    let paste = |seat: &str, primary: bool| {
+        let mut args = vec!["--seat", seat, "--no-newline"];
+        if primary {
+            args.push("--primary");
+        }
+        wait_for("a paste", || {
+            let (ok, text) = run("wl-paste", &args);
+            (ok && !text.is_empty()).then_some(text)
+        })
+    };
+    assert_eq!(paste(&seat0, false), "copied by seat 0");
+    assert_eq!(paste(&seat0, true), "selected by seat 0");
+    assert_eq!(paste(&seat1, false), "copied by seat 1", "seat 1's clipboard is its own");
+    let (ok, text) = run("wl-paste", &["--seat", &seat1, "--primary", "--no-newline"]);
+    assert!(!ok || text.is_empty(), "seat 1 selected nothing: {text:?}");
+}
+

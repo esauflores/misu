@@ -93,6 +93,11 @@ screenshots fail. Only the combos listed in `locked_bindings`
 (`["XF86AudioMute", "XF86AudioRaiseVolume"]`) run. A locker that crashes
 leaves the session locked; start another to unlock. See `src/lock.rs`.
 
+Each seat has its own clipboard and primary selection (select, then
+middle-click). Clipboard tools reach them without a window, through data
+control (wlr and ext): `wl-paste --watch cliphist store` keeps the first
+seat's history; `--seat seat1` picks another.
+
 Each seat on the shown workspace has its pointer drawn with a real cursor:
 the app's (its own surface, or a shape it names), else the theme's arrow,
 from `XCURSOR_THEME` and `XCURSOR_SIZE`. Seat 0 has the theme as it is;

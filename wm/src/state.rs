@@ -131,6 +131,8 @@ pub struct State {
     /// Kept alive for its wl_output and xdg-output globals.
     pub _output_manager_state: OutputManagerState,
     pub data_device_state: DataDeviceState,
+    /// Primary selection and data control (see `clipboard.rs`).
+    pub clipboard: crate::clipboard::Clipboard,
     pub popups: PopupManager,
 }
 
@@ -169,6 +171,7 @@ impl State {
             shm_state: ShmState::new::<Self>(&dh, vec![]),
             _output_manager_state: OutputManagerState::new_with_xdg_output::<Self>(&dh),
             data_device_state: DataDeviceState::new::<Self>(&dh),
+            clipboard: crate::clipboard::Clipboard::new(&dh),
             popups: PopupManager::default(),
             display_handle: dh.clone(),
             config,

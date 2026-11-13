@@ -56,7 +56,8 @@ impl SeatHandler for State {
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let dh = &self.display_handle;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
-        set_data_device_focus(dh, seat, client);
+        set_data_device_focus(dh, seat, client.clone());
+        smithay::wayland::selection::primary_selection::set_primary_focus(dh, seat, client);
     }
 }
 
