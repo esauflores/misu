@@ -27,7 +27,14 @@ mod layout {
         fn configure(&self, size: Size<i32, Logical>) {
             self.size.set(Some((size.w, size.h)));
         }
+
+        /// What it was told, else a dialog's 300×200.
+        fn size(&self) -> Size<i32, Logical> {
+            self.size.get().unwrap_or(DIALOG).into()
+        }
     }
+
+    const DIALOG: (i32, i32) = (300, 200);
 
     fn fake(id: u32) -> Fake {
         Fake { id, size: Rc::default() }
@@ -41,8 +48,13 @@ mod layout {
         OUT.into()
     }
 
+    /// A default column's width on a screen `w` wide.
+    fn width_on(w: i32) -> i32 {
+        (w as f64 * DEFAULT_WIDTH - GAP as f64 * (1.0 + DEFAULT_WIDTH)) as i32
+    }
+
     fn column_width() -> i32 {
-        (OUT.0 as f64 * DEFAULT_WIDTH) as i32 - GAP - GAP / 2
+        width_on(OUT.0)
     }
 
     /// Workspace with windows 1..=n, added in order, animated.
@@ -76,8 +88,8 @@ mod layout {
         let (ws, windows) = workspace(3, now);
         let w = column_width();
         assert_eq!(xs(&ws), vec![(1, GAP), (2, 2 * GAP + w), (3, 3 * GAP + 2 * w)]);
-        // Two half-width columns and their gaps fill the screen exactly.
-        assert_eq!(3 * GAP + 2 * w, OUT.0);
+        // One column and its gaps fill the screen exactly: an app per screen.
+        assert_eq!(2 * GAP + w, OUT.0);
         for window in &windows {
             assert_eq!(window.size.get(), Some((w, OUT.1 - 2 * GAP)));
         }
@@ -99,8 +111,10 @@ mod layout {
         let now = Instant::now();
         let (mut ws, windows) = workspace(3, now);
         assert_eq!(ws.view_target(ME), 0.0);
-        ws.reveal(ME, &windows[1], now, true);
+        ws.reveal(ME, &windows[0], now, true);
         assert_eq!(ws.view_target(ME), 0.0, "visible already: nothing moves");
+        ws.reveal(ME, &windows[1], now, true);
+        assert_eq!(ws.view_target(ME), (GAP + column_width()) as f64, "one column over");
         ws.reveal(ME, &windows[2], now, true);
         assert_eq!(ws.view_target(ME), view_showing_third());
         ws.reveal(ME, &windows[0], now, true);
@@ -137,8 +151,9 @@ mod layout {
         ws.reveal(ME, &windows[2], now, true);
         ws.reveal(OTHER, &windows[2], now, true);
         ws.remove(&windows[2], now, true);
-        assert_eq!(ws.view_target(ME), 0.0, "two columns fit: no need to scroll");
-        assert_eq!(ws.view_target(OTHER), 0.0);
+        let last = (GAP + column_width()) as f64;
+        assert_eq!(ws.view_target(ME), last, "back to the one now last, not past it");
+        assert_eq!(ws.view_target(OTHER), last);
     }
 
     #[test]
@@ -225,16 +240,59 @@ mod layout {
         let wide: Size<i32, Logical> = (3000, 600).into();
         ws.resize(wide, now, false);
         assert_eq!(ws.size(), wide);
-        let w = (3000.0 * DEFAULT_WIDTH) as i32 - GAP - GAP / 2;
+        let w = width_on(3000);
         assert_eq!(windows[0].size.get(), Some((w, 600 - 2 * GAP)));
         // Three half-width columns still don't fit, and the view is in range: kept.
         assert_eq!(ws.view_target(ME), view_showing_third());
         // Narrower than before, the last column ends further left: pulled back to it.
         ws.resize((600, 600).into(), now, false);
-        let w = (600.0 * DEFAULT_WIDTH) as i32 - GAP - GAP / 2;
+        let w = width_on(600);
         let end = (GAP + 3 * (w + GAP) - 600) as f64;
         assert!(end < view_showing_third());
         assert_eq!(ws.view_target(ME), end);
+    }
+
+    #[test]
+    fn a_dialog_floats_over_its_parent() {
+        let now = Instant::now();
+        let (mut ws, windows) = workspace(2, now);
+        let dialog = fake(9);
+        ws.add_float(dialog.clone(), Some(&windows[1]));
+        assert!(ws.is_floating(&dialog) && ws.contains(&dialog));
+        assert_eq!(dialog.size.get(), None, "it keeps its own size");
+        assert_eq!(ws.windows().count(), 3);
+        // Centred over its parent, as each seat sees it: off my screen at
+        // first, on the other's once it scrolls there.
+        let centre = |ws: &Workspace<Fake>, seat| {
+            let pos: Vec<_> = ws.positions(seat, now).map(|(w, p)| (w.id, p)).collect();
+            let parent = pos.iter().find(|(id, _)| *id == 2).unwrap().1;
+            let float = pos.last().unwrap();
+            assert_eq!(float.0, 9, "drawn last, over the columns");
+            (float.1.x - parent.x, float.1.y - parent.y)
+        };
+        let over = ((column_width() - DIALOG.0) / 2, (OUT.1 - 2 * GAP - DIALOG.1) / 2);
+        assert_eq!(centre(&ws, ME), over);
+        ws.reveal(OTHER, &dialog, now, false);
+        assert_eq!(ws.view_target(OTHER), (GAP + column_width()) as f64, "revealing it shows its parent's column");
+        assert_eq!(centre(&ws, OTHER), over);
+        // Beside it are its parent's neighbours; closing it hands focus back.
+        assert_eq!(ws.neighbour(&dialog, Direction::Left).map(|w| w.id), Some(1));
+        assert_eq!(ws.remove(&dialog, now, false).map(|w| w.id), Some(2));
+        assert!(!ws.contains(&dialog));
+    }
+
+    #[test]
+    fn a_dialog_whose_parent_closes_centres_on_the_screen() {
+        let now = Instant::now();
+        let (mut ws, windows) = workspace(1, now);
+        let dialog = fake(9);
+        ws.add_float(dialog.clone(), Some(&windows[0]));
+        ws.remove(&windows[0], now, false);
+        let (_, rect) = ws.targets().find(|(w, _)| w.id == 9).unwrap();
+        assert_eq!((rect.loc.x, rect.loc.y), ((OUT.0 - DIALOG.0) / 2, (OUT.1 - DIALOG.1) / 2));
+        // A parent from elsewhere counts as none.
+        ws.add_float(fake(10), Some(&fake(77)));
+        assert!(ws.targets().any(|(w, r)| w.id == 10 && r.loc.x == (OUT.0 - DIALOG.0) / 2));
     }
 
     #[test]

@@ -140,10 +140,13 @@ impl CompositorHandler for State {
                     self.add_window(window);
                 } else if !toplevel.is_initial_configure_sent() {
                     // The first commit asks for a configure, with the size
-                    // it will get in the layout.
-                    let ws = self.seats[self.home_seat(&window)].workspace;
-                    let size = self.workspaces[&ws].new_column_size();
-                    toplevel.with_pending_state(|s| s.size = Some(size));
+                    // it will get in the layout; one floating over its
+                    // parent (a dialog) picks its own.
+                    if self.parent_of(&window).is_none() {
+                        let ws = self.seats[self.home_seat(&window)].workspace;
+                        let size = self.workspaces[&ws].new_column_size();
+                        toplevel.with_pending_state(|s| s.size = Some(size));
+                    }
                     toplevel.send_configure();
                 }
             } else if let Some(window) = self.window_for_surface(&root) {

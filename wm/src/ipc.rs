@@ -446,6 +446,8 @@ impl State {
                     .map(|(w, r)| {
                         let more = json!({
                             "x": r.loc.x, "y": r.loc.y, "width": r.size.w, "height": r.size.h,
+                            // Over its parent (a dialog), at its own size.
+                            "floating": self.workspaces[&id].is_floating(w),
                             "configured": w.toplevel().is_some_and(|t| t.is_initial_configure_sent()),
                             "activated": w.toplevel().is_some_and(|t| t.with_pending_state(|s| s.states.contains(Activated))),
                         });

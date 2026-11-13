@@ -42,6 +42,12 @@ mise install                                   # Rust, pinned in mise.toml
 - **Animations are per seat**: a seat's changes animate when it has them on
   and a screen shows it. An `Anim` retargets from its current value and never
   restarts.
+- **Columns are as wide as the screen** (`DEFAULT_WIDTH` 1.0): one app per
+  screen, scrolled between. A toplevel with a parent (xdg `set_parent`: a
+  dialog) floats centred over it at its own size (`Workspace::floats`),
+  follows it in every seat's view, and gives focus back to it on close.
+  Apps opened by other apps still tile; floating them too was option 2,
+  left for now.
 - **Clicks** focus without scrolling; keyboard and explicit moves reveal the
   window in that seat's view.
 - **Screens** have an incrementing `ScreenId`; make, model and serial (plus
@@ -129,7 +135,12 @@ offscreen texture with the next frame and writes a PNG; the reply waits
 for it (`State::shots`, taken in each backend's frame by
 `State::take_shots`; refused while the session is paused). `wm msg` makes
 the path absolute. The e2e run shoots seat 1 while no screen shows it and
-checks its window is in the picture. Step 5 is next.
+checks its window is in the picture.
+
+Step 5 so far: full-width columns and floating dialogs (above); the e2e
+run opens a GTK 4 window and a dialog for it (python3 with GTK 4). Left
+of step 5: screencopy and portals, XWayland, popup grabs per seat,
+server-side decorations, full screen.
 
 Known and left for now:
 

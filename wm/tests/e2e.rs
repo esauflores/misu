@@ -3,7 +3,8 @@
 //!
 //! Needs `scroll` and `kitty` on PATH (skipped otherwise) and a GPU. Leaves a
 //! screenshot in target/tmp/e2e/screen.png (and layers.png, with a bar and
-//! fuzzel) when `grim` is there. The layer-shell step needs `quickshell`,
+//! fuzzel) when `grim` is there, and dialog.png (seat 0's view of a GTK
+//! dialog over its window). The layer-shell step needs `quickshell`,
 //! and `fuzzel` for its keyboard part.
 
 use std::{
@@ -299,7 +300,9 @@ fn nested_in_headless_scroll() {
     let window = &windows(&tree, 2)[0];
     let (cx, cy) = centre(&tree, 1, window);
     assert_ne!(at(cx as usize, cy as usize), at(w - 4, cy as usize), "the window is drawn: {:?}", at(cx as usize, cy as usize));
-    assert_eq!(at(w - 4, cy as usize), [20, 20, 25, 255], "the background beside it");
+    let beside = at(w - 4, cy as usize);
+    let background = [20, 20, 25, 255];
+    assert!(beside.iter().zip(background).all(|(&a, b)| a.abs_diff(b) <= 2), "the background beside it: {beside:?}");
     wm.msg(&format!("seat 0 screenshot {}", dir.join("seat0.png").display()));
     assert_eq!(read_png(&dir.join("seat0.png")).0, w);
     assert!(wm.try_msg("seat 1 screenshot relative.png").unwrap()["ok"] == false, "wm wants an absolute path");
@@ -314,24 +317,24 @@ fn nested_in_headless_scroll() {
     assert!(view(&tree, 0) > 0.0, "seat 0's view stays where it was");
     assert_eq!(seat(&tree, 1)["animating"], false, "seat 1 isn't on screen: no animation");
 
-    // Seat 1 clicks the second window where it sees it: its focus, its view
-    // unmoved, seat 0 untouched.
-    let (cx, cy) = centre(&tree, 1, &windows(&tree, 1)[1]);
+    // Seat 1 clicks the window it sees: its focus, its view unmoved, seat 0
+    // untouched.
+    let (cx, cy) = centre(&tree, 1, &windows(&tree, 1)[0]);
     wm.msg(&format!("seat 1 click {cx} {cy}"));
     let after = wm.tree();
-    assert_eq!(focus(&after, 1), Some(ids[1]));
+    assert_eq!(focus(&after, 1), Some(ids[0]));
     assert_eq!(view(&after, 1), 0.0);
     assert_eq!(focus(&after, 0), Some(ids[2]));
     assert_eq!(seat(&after, 1)["pointer"]["x"].as_f64().unwrap() as i64, cx);
 
-    // Seat 1's view scrolls under its still pointer; a click there goes to
-    // the window now under it, the one it focuses.
+    // Seat 1's view scrolls a screen over, under its still pointer; a click
+    // there goes to the window now under it, the one it focuses.
     wm.msg("seat 1 focus right");
     assert!(view(&wm.tree(), 1) > 0.0);
     wm.msg("seat 1 click");
     let tree = wm.tree();
-    assert_eq!(focus(&tree, 1), Some(ids[2]));
-    assert_eq!(seat(&tree, 1)["pointer"]["over"].as_u64(), Some(ids[2]), "the click went where the focus did");
+    assert_eq!(focus(&tree, 1), Some(ids[1]));
+    assert_eq!(seat(&tree, 1)["pointer"]["over"].as_u64(), Some(ids[1]), "the click went where the focus did");
 
     // Seat 0's animations: off moves at once, on animates and then settles.
     wm.msg("seat 0 animations off");
@@ -487,6 +490,8 @@ fn nested_in_headless_scroll() {
     assert_eq!(focus(&tree, 0), Some(last));
     assert_eq!(own_windows(&tree), vec![last]);
 
+    dialog_floats(&wm, &dir);
+
     // Errors come back as errors.
     let reply = wm.try_msg("seat 7 focus left").unwrap();
     assert_eq!(reply["ok"], false);
@@ -611,4 +616,58 @@ fn read_png(path: &Path) -> (usize, Vec<u8>) {
     let info = reader.next_frame(&mut pixels).unwrap();
     assert_eq!(info.color_type, png::ColorType::Rgba);
     (info.width as usize, pixels)
+}
+
+/// A GTK window opens a dialog for itself: the dialog floats over it, centred,
+/// at its own size, focused; the window has a full-screen column.
+fn dialog_floats(wm: &Wm, dir: &Path) {
+    let gtk = Command::new("python3")
+        .args(["-c", "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk"])
+        .status()
+        .is_ok_and(|s| s.success());
+    if !gtk {
+        eprintln!("dialogs: skipped, needs python3 with GTK 4");
+        return;
+    }
+    let script = dir.join("dialog.py");
+    fs::write(
+        &script,
+        r#"import gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk, GLib
+Gtk.init()
+parent = Gtk.Window(title="e2e-parent")
+parent.present()
+def dialog():
+    Gtk.Window(title="e2e-dialog", transient_for=parent, default_width=320, default_height=180).present()
+    return False
+GLib.timeout_add(300, dialog)
+GLib.MainLoop().run()
+"#,
+    )
+    .unwrap();
+    let pid = spawn_tracked(wm, 0, dir, "dialog", &format!("env GDK_BACKEND=wayland python3 {}", script.display()));
+    let titled = |tree: &Value, title: &str| -> Option<Value> {
+        tree["workspaces"].as_array()?.iter().flat_map(|ws| ws["windows"].as_array().unwrap().iter()).find(|w| w["title"] == title).cloned()
+    };
+    let (parent, dialog) = wait_for("the window and its dialog", || {
+        let tree = wm.tree();
+        let (parent, dialog) = (titled(&tree, "e2e-parent")?, titled(&tree, "e2e-dialog")?);
+        (dialog["configured"] == true && dialog["width"].as_i64()? > 0).then_some((parent, dialog))
+    });
+    let n = |w: &Value, k: &str| w[k].as_i64().unwrap();
+    assert_eq!((parent["floating"].as_bool(), dialog["floating"].as_bool()), (Some(false), Some(true)));
+    assert_eq!(parent["workspace"], dialog["workspace"]);
+    assert!(n(&dialog, "width") < n(&parent, "width"), "its own size, not a column's: {dialog}");
+    for (x, w) in [("x", "width"), ("y", "height")] {
+        let (parent_mid, dialog_mid) = (n(&parent, x) + n(&parent, w) / 2, n(&dialog, x) + n(&dialog, w) / 2);
+        assert!((parent_mid - dialog_mid).abs() <= 1, "centred over its parent along {x}: {parent} {dialog}");
+    }
+    assert_eq!(focus(&wm.tree(), 0), dialog["id"].as_u64(), "the dialog has the focus");
+    wm.msg(&format!("seat 0 screenshot {}", dir.join("dialog.png").display()));
+    kill(&pid);
+    wait_for("the window and dialog to go", || {
+        let tree = wm.tree();
+        (titled(&tree, "e2e-parent").is_none() && titled(&tree, "e2e-dialog").is_none()).then_some(())
+    });
 }

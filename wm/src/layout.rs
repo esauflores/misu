@@ -21,8 +21,9 @@ use smithay::{
 };
 
 pub const GAP: i32 = 12;
-/// A new column's width, as a fraction of the screen's.
-pub const DEFAULT_WIDTH: f64 = 0.5;
+/// A new column's width, as a fraction of the screen's: all of it, one
+/// window per screen, scrolled between.
+pub const DEFAULT_WIDTH: f64 = 1.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
@@ -34,6 +35,8 @@ pub enum Direction {
 pub trait Tile: Clone + PartialEq {
     /// Ask the window to take this size.
     fn configure(&self, size: Size<i32, Logical>);
+    /// The size it has: a floating window keeps its own.
+    fn size(&self) -> Size<i32, Logical>;
 }
 
 impl Tile for Window {
@@ -47,6 +50,10 @@ impl Tile for Window {
             }
         }
     }
+
+    fn size(&self) -> Size<i32, Logical> {
+        self.geometry().size
+    }
 }
 
 struct Column<W> {
@@ -55,18 +62,28 @@ struct Column<W> {
     x: Anim,
 }
 
+/// A window an app opened for another of its windows (a dialog): it floats
+/// centred over that one, its parent, wherever a seat's view has it, at the
+/// size it picks. Without a parent here, centred on the screen.
+struct Float<W> {
+    window: W,
+    parent: Option<W>,
+}
+
 pub struct Workspace<W: Tile = Window> {
     /// The part of its screen it is laid out in: all of it but what layer
     /// surfaces (a bar) keep for themselves, in the screen's coordinates.
     area: Rectangle<i32, Logical>,
     columns: Vec<Column<W>>,
+    /// Over the columns, the last on top; a parent before its children.
+    floats: Vec<Float<W>>,
     /// Each seat's scroll position, by seat index.
     views: Vec<Anim>,
 }
 
 impl<W: Tile> Workspace<W> {
     pub fn new(size: Size<i32, Logical>) -> Self {
-        Self { area: Rectangle::from_size(size), columns: Vec::new(), views: Vec::new() }
+        Self { area: Rectangle::from_size(size), columns: Vec::new(), floats: Vec::new(), views: Vec::new() }
     }
 
     pub fn size(&self) -> Size<i32, Logical> {
@@ -91,19 +108,42 @@ impl<W: Tile> Workspace<W> {
     }
 
     pub fn is_empty(&self) -> bool {
-        self.columns.is_empty()
+        self.columns.is_empty() && self.floats.is_empty()
     }
 
+    /// The columns' windows, then the floating ones.
     pub fn windows(&self) -> impl Iterator<Item = &W> {
-        self.columns.iter().map(|c| &c.window)
+        self.columns.iter().map(|c| &c.window).chain(self.floats.iter().map(|f| &f.window))
     }
 
     pub fn contains(&self, window: &W) -> bool {
-        self.index_of(window).is_some()
+        self.windows().any(|w| w == window)
+    }
+
+    pub fn is_floating(&self, window: &W) -> bool {
+        self.floats.iter().any(|f| &f.window == window)
     }
 
     fn index_of(&self, window: &W) -> Option<usize> {
         self.columns.iter().position(|c| &c.window == window)
+    }
+
+    /// The column `window` is, or (floating) the one its parents float over.
+    fn column_of(&self, window: &W) -> Option<usize> {
+        let mut window = window.clone();
+        for _ in 0..=self.floats.len() {
+            if let Some(index) = self.index_of(&window) {
+                return Some(index);
+            }
+            window = self.floats.iter().find(|f| f.window == window)?.parent.clone()?;
+        }
+        None
+    }
+
+    /// Add `window` floating over `parent` (if it is here).
+    pub fn add_float(&mut self, window: W, parent: Option<&W>) {
+        let parent = parent.filter(|p| self.contains(p)).cloned();
+        self.floats.push(Float { window, parent });
     }
 
     fn view_mut(&mut self, seat: usize) -> &mut Anim {
@@ -137,8 +177,19 @@ impl<W: Tile> Workspace<W> {
         self.arrange(now, animate);
     }
 
-    /// Remove `window`; returns the window that should take its focus.
+    /// Remove `window`; returns the window that should take its focus: a
+    /// floating one's parent, a column's neighbour. Windows floating over it
+    /// stay, centred on the screen.
     pub fn remove(&mut self, window: &W, now: Instant, animate: bool) -> Option<W> {
+        for float in &mut self.floats {
+            if float.parent.as_ref() == Some(window) {
+                float.parent = None;
+            }
+        }
+        if let Some(i) = self.floats.iter().position(|f| &f.window == window) {
+            let float = self.floats.remove(i);
+            return float.parent.or_else(|| self.columns.first().map(|c| c.window.clone()));
+        }
         let index = self.index_of(window)?;
         self.columns.remove(index);
         self.arrange(now, animate);
@@ -146,8 +197,9 @@ impl<W: Tile> Workspace<W> {
         Some(self.columns[next].window.clone())
     }
 
+    /// The column beside `window`'s (a floating one's: its parent's).
     pub fn neighbour(&self, window: &W, dir: Direction) -> Option<W> {
-        let index = self.index_of(window)?;
+        let index = self.column_of(window)?;
         let index = match dir {
             Direction::Left => index.checked_sub(1)?,
             Direction::Right => index + 1,
@@ -174,9 +226,10 @@ impl<W: Tile> Workspace<W> {
         self.arrange(now, animate);
     }
 
-    /// Scroll `seat`'s view just enough to show `window` whole.
+    /// Scroll `seat`'s view just enough to show `window` whole (a floating
+    /// one: the column it floats over).
     pub fn reveal(&mut self, seat: usize, window: &W, now: Instant, animate: bool) {
-        let Some(index) = self.index_of(window) else { return };
+        let Some(index) = self.column_of(window) else { return };
         let x = self.columns[index].x.target();
         let (w, gap, screen) = (self.column_width(index) as f64, GAP as f64, self.area.size.w as f64);
         let view = self.view_target(seat);
@@ -221,24 +274,39 @@ impl<W: Tile> Workspace<W> {
         }
     }
 
-    /// Where each window is at `now`, as `seat` sees it on screen.
+    /// Where each window is at `now`, as `seat` sees it on screen: the
+    /// columns, then the floating windows over them.
     pub fn positions(&self, seat: usize, now: Instant) -> impl Iterator<Item = (&W, Point<i32, Logical>)> {
         let view = self.view(seat, now);
-        let origin = self.area.loc;
-        self.columns.iter().map(move |c| {
-            let x = (c.x.value(now) - view).round() as i32;
-            (&c.window, origin + Point::from((x, GAP)))
-        })
+        self.place(|c| c.x.value(now) - view).into_iter().map(|(w, r)| (w, r.loc))
     }
 
     /// Where each window is headed on the screen, before any view.
     pub fn targets(&self) -> impl Iterator<Item = (&W, Rectangle<i32, Logical>)> {
+        self.place(|c| c.x.target()).into_iter()
+    }
+
+    /// Every window's rectangle, columns at `x` along the screen.
+    fn place(&self, x: impl Fn(&Column<W>) -> f64) -> Vec<(&W, Rectangle<i32, Logical>)> {
         let height = (self.area.size.h - 2 * GAP).max(1);
         let origin = self.area.loc;
-        self.columns.iter().enumerate().map(move |(i, c)| {
-            let x = c.x.target().round() as i32;
-            (&c.window, Rectangle::new(origin + Point::from((x, GAP)), (self.column_width(i), height).into()))
-        })
+        let mut placed: Vec<(&W, Rectangle<i32, Logical>)> = self
+            .columns
+            .iter()
+            .enumerate()
+            .map(|(i, c)| {
+                let loc = origin + Point::from((x(c).round() as i32, GAP));
+                (&c.window, Rectangle::new(loc, (self.column_width(i), height).into()))
+            })
+            .collect();
+        for float in &self.floats {
+            let under = float.parent.as_ref().and_then(|p| placed.iter().find(|(w, _)| *w == p)).map(|(_, r)| *r);
+            let under = under.unwrap_or(self.area);
+            let size = float.window.size();
+            let loc = under.loc + Point::from(((under.size.w - size.w) / 2, (under.size.h - size.h) / 2));
+            placed.push((&float.window, Rectangle::new(loc, size)));
+        }
+        placed
     }
 
     /// Whether the columns, or `seat`'s view, are still moving.
@@ -246,9 +314,11 @@ impl<W: Tile> Workspace<W> {
         self.views.get(seat).is_some_and(|v| !v.is_done(now)) || self.columns.iter().any(|c| !c.x.is_done(now))
     }
 
+    /// `fraction` of the screen, less its share of the gaps: 1/fraction
+    /// columns and the gaps around them fill the screen exactly.
     fn column_width(&self, index: usize) -> i32 {
         let fraction = self.columns.get(index).map_or(DEFAULT_WIDTH, |c| c.width);
-        ((self.area.size.w as f64 * fraction) as i32 - GAP - GAP / 2).max(1)
+        ((self.area.size.w as f64 * fraction - GAP as f64 * (1.0 + fraction)) as i32).max(1)
     }
 
     fn column_x(&self, index: usize) -> f64 {

@@ -406,10 +406,32 @@ impl State {
         std::str::from_utf8(value).ok()?.parse().ok().filter(|&seat| seat < self.seats.list.len())
     }
 
+    /// The window `window`'s app opened it for (a dialog's), if it is in
+    /// the layout.
+    pub fn parent_of(&self, window: &Window) -> Option<Window> {
+        let parent = window.toplevel()?.parent()?;
+        self.window_for_surface(&parent)
+    }
+
     /// A toplevel showed its first buffer: it joins its home seat's
-    /// workspace, focused there.
+    /// workspace, focused there. One with a parent (a dialog) floats over it
+    /// instead, focused by whoever focuses its parent.
     pub fn add_window(&mut self, window: Window) {
         let now = Instant::now();
+        if let Some(parent) = self.parent_of(&window)
+            && let Some(ws) = self.workspace_of(&parent)
+        {
+            self.ws(ws).add_float(window.clone(), Some(&parent));
+            let seat = (0..self.seats.list.len())
+                .find(|&s| self.seats[s].focus.as_ref() == Some(&parent))
+                .unwrap_or_else(|| self.home_seat(&window));
+            if self.seats[seat].workspace == ws {
+                self.focus(seat, Some(window), true);
+            } else {
+                self.update_activation();
+            }
+            return;
+        }
         let seat = self.home_seat(&window);
         let ws = self.seats[seat].workspace;
         let after = self.seats[seat].focus.clone().filter(|w| self.workspaces[&ws].contains(w));
@@ -620,7 +642,9 @@ impl State {
             }
             for (window, loc) in placed {
                 if space.element_location(&window) != Some(loc) {
-                    space.map_element(window, loc, false);
+                    // Floating windows (placed last) go on top.
+                    let floating = self.workspaces.values().any(|ws| ws.is_floating(&window));
+                    space.map_element(window, loc, floating);
                 }
             }
         }

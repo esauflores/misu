@@ -7,6 +7,10 @@ built around several seats on one screen:
   and scroll position, so several people can work at once. One seat is on
   screen; the others keep working on their own workspaces whether anyone sees
   them or not. Two seats on the same workspace each scroll their own view.
+- **One app per screen**: each window gets a column as wide as the screen,
+  and a workspace is a row of them to scroll along. A window an app opens
+  for another of its windows (a dialog, a file picker) floats centred over
+  that one at its own size instead.
 - **Animations are per seat**: a seat's changes animate when it has them on
   and it is the one on screen; everything else happens at once. A change in
   the middle of an animation carries on from where it is, never restarts.
@@ -174,5 +178,5 @@ logs and a screenshot in `target/tmp/e2e/`.
 ## Next
 
 - Screencopy, portals, a sway-compatible IPC
-- Column widths, full screen, popups and grabs per seat
+- Full screen, popups and grabs per seat
 - Server-side decorations (kitty draws its own title bar for now)
