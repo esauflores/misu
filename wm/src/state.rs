@@ -101,6 +101,8 @@ pub struct State {
     pub shots: Vec<crate::shot::Shot>,
     /// Capture by other programs (grim, screen sharing): see `capture.rs`.
     pub capture: crate::capture::Capture,
+    /// Kept alive for its global: apps leave their title bars to wm.
+    pub decorations: smithay::wayland::shell::xdg::decoration::XdgDecorationState,
 
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
@@ -131,6 +133,7 @@ impl State {
             events: Events::default(),
             shots: Vec::new(),
             capture: crate::capture::Capture::new(&dh),
+            decorations: crate::decorations::new_state(&dh),
             compositor_state: CompositorState::new::<Self>(&dh),
             xdg_shell_state: XdgShellState::new::<Self>(&dh),
             layer_shell_state: WlrLayerShellState::new::<Self>(&dh),
@@ -790,19 +793,10 @@ impl ClientData for ClientState {}
 
 // Seats
 
-/// Seat colours, for their pointers and focus marks.
-const COLORS: [[f32; 4]; 4] = [
-    [0.95, 0.95, 0.95, 1.0],
-    [0.92, 0.36, 0.36, 1.0],
-    [0.36, 0.72, 0.95, 1.0],
-    [0.55, 0.85, 0.45, 1.0],
-];
-
 pub const CURSOR_SIZE: i32 = 10;
 /// A seat index no seat has, for a screen nobody looks at: its view of any
 /// workspace is at the start.
 pub const NOBODY: usize = usize::MAX;
-pub const MARK_HEIGHT: i32 = 4;
 
 pub struct SeatData {
     pub seat: Seat<State>,
@@ -817,7 +811,6 @@ pub struct SeatData {
     /// Its own setting; see `State::animates`.
     pub animate: bool,
     pub cursor: SolidColorBuffer,
-    pub mark: SolidColorBuffer,
 }
 
 #[derive(Default)]
@@ -835,7 +828,6 @@ impl Seats {
         let mut seat = self.state.new_wl_seat(dh, format!("seat{index}"));
         seat.add_keyboard(Default::default(), 200, 25).expect("keyboard");
         seat.add_pointer();
-        let color = COLORS[index % COLORS.len()];
         self.list.push(SeatData {
             seat,
             intercepted_keys: HashSet::new(),
@@ -844,8 +836,8 @@ impl Seats {
             layer_focus: None,
             menu: None,
             animate: true,
-            cursor: SolidColorBuffer::new((CURSOR_SIZE, CURSOR_SIZE), color),
-            mark: SolidColorBuffer::new((1, MARK_HEIGHT), color),
+            // Coloured as it is drawn (`Config::colors`).
+            cursor: SolidColorBuffer::new((CURSOR_SIZE, CURSOR_SIZE), [1.0; 4]),
         });
         index
     }

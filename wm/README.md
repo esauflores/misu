@@ -11,7 +11,10 @@ built around several seats on one screen:
   and a workspace is a row of them to scroll along. A window an app opens
   for another of its windows (a dialog, a file picker) floats centred over
   that one at its own size instead. Full screen (`Mod+f`, or the app
-  asking) a window covers the whole screen, bar and all. A menu holds
+  asking) a window covers the whole screen, bar and all. Apps leave
+  their title bars to wm (GTK 4 ones keep theirs), and wm draws a 2px
+  border round each window: the colour of the seat focusing it, from
+  the config file's `colors`. A menu holds
   the pointer and keyboard of the seat that opened it, and only that
   seat's.
 - **Animations are per seat**: a seat's changes animate when it has them on
@@ -179,6 +182,7 @@ logs and a screenshot in `target/tmp/e2e/`.
 - `src/input.rs`: input routing, and the actions bindings and `wm msg` run
 - `src/shot.rs`: screenshots of a seat's own view, drawn off screen
 - `src/capture.rs`: capture for other programs (grim, screen sharing)
+- `src/decorations.rs`: no title bars from apps; borders, and the colours
 - `src/winit.rs`: the nested backend and rendering
 - `src/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices
 - `src/layers.rs`: the layer shell: bars and launchers, their room and focus
@@ -189,4 +193,4 @@ logs and a screenshot in `target/tmp/e2e/`.
 
 - Screen sharing checked through the portal, dma-buf capture, a
   sway-compatible IPC
-- Server-side decorations (kitty draws its own title bar for now)
+- Rounded corners and shadows (Misu's look under scroll)

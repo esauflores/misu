@@ -18,7 +18,7 @@ use smithay::{
     utils::{Point, Rectangle, Transform},
 };
 
-use crate::state::{CURSOR_SIZE, MARK_HEIGHT, State, WorkspaceId, new_output};
+use crate::state::{CURSOR_SIZE, State, WorkspaceId, new_output};
 
 pub(crate) const BACKGROUND: [f32; 4] = [0.08, 0.08, 0.1, 1.0];
 
@@ -82,7 +82,6 @@ pub(crate) fn overlay_of(state: &mut State, shown: WorkspaceId, viewer: usize, n
     let mut elements = Vec::new();
     let ws = &state.workspaces[&shown];
     let viewer_view = ws.view(viewer, now);
-    let placed: Vec<_> = ws.positions(viewer, now).map(|(w, p)| (w.clone(), p)).collect();
     for (index, data) in state.seats.list.iter_mut().enumerate() {
         if data.workspace != shown {
             continue;
@@ -93,21 +92,8 @@ pub(crate) fn overlay_of(state: &mut State, shown: WorkspaceId, viewer: usize, n
         let half = (CURSOR_SIZE / 2) as f64;
         let x = pointer.x + ws.view(index, now) - viewer_view;
         let at = Point::from((x - half, pointer.y - half)).to_i32_round();
+        data.cursor.update((CURSOR_SIZE, CURSOR_SIZE), state.config.colors.seat(index));
         elements.push(SolidColorRenderElement::from_buffer(&data.cursor, at.to_physical(1), 1.0, 1.0, Kind::Cursor));
-
-        if let Some((window, loc)) = placed.iter().find(|(w, _)| Some(w) == data.focus.as_ref()) {
-            let width = window.geometry().size.w.max(1);
-            data.mark.resize((width, MARK_HEIGHT));
-            // Two rows fit in the gap above the window, two in the one below.
-            let row = (MARK_HEIGHT + 2) * (index as i32 % 2);
-            let y = if index % 4 < 2 {
-                loc.y - (MARK_HEIGHT + 2) - row
-            } else {
-                loc.y + window.geometry().size.h + 2 + row
-            };
-            let at = Point::from((loc.x, y));
-            elements.push(SolidColorRenderElement::from_buffer(&data.mark, at.to_physical(1), 1.0, 1.0, Kind::Unspecified));
-        }
     }
     elements
 }

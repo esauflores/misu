@@ -668,6 +668,25 @@ mod options {
     }
 
     #[test]
+    fn colours_come_from_wm_then_the_file() {
+        let colors = Config::default().colors;
+        assert_eq!(colors.seat(0), [242.0 / 255.0, 242.0 / 255.0, 242.0 / 255.0, 1.0]);
+        assert_eq!(colors.seat(4), colors.seat(0), "round again past the end");
+        let path = std::env::temp_dir().join(format!("wm-colors-config-{}.json", std::process::id()));
+        let parse = |source: &str| {
+            std::fs::write(&path, source).unwrap();
+            Config::from_args(["--config", path.to_str().unwrap()].map(String::from))
+        };
+        let Ok(Command::Run(c)) = parse(r##"{"colors":{"seats":["#ff0000","#00ff0080"]}}"##) else { panic!() };
+        assert_eq!((c.colors.seat(0), c.colors.seat(1), c.colors.seat(2)), ([1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 128.0 / 255.0], [1.0, 0.0, 0.0, 1.0]));
+        assert_eq!(c.colors.inactive, colors.inactive, "the default where the file says nothing");
+        for bad in [r#"{"colors":{"seats":["red"]}}"#, r##"{"colors":{"inactive":"#12345"}}"##, r#"{"colors":{"border":2}}"#, r#"{"colors":[]}"#] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn device_configuration_routes_names_and_validates_seats() {
         let path = std::env::temp_dir().join(format!("wm-device-config-{}.json", std::process::id()));
         let parse = |source: &str, seats: &str| {

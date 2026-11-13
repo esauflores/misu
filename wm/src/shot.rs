@@ -1,5 +1,5 @@
 //! Screenshots of a seat's own view: its workspace as it sees it (scrolled
-//! its way, its pointer and focus mark, its screen's layer surfaces),
+//! its way, its pointer, focus borders, its screen's layer surfaces),
 //! whether or not a screen shows it. `wm msg seat N screenshot FILE` asks;
 //! the backend draws it with its next frame (`State::take_shots`), off
 //! screen, and the reply waits for it.
@@ -92,7 +92,7 @@ impl State {
     }
 
     /// Workspace `ws` as seat `viewer` sees it, with `screen`'s layer
-    /// surfaces, front to back: pointers (if `pointers`) and focus marks,
+    /// surfaces, front to back: pointers (if `pointers`),
     /// layers above the windows, the windows, layers below.
     pub fn view_elements(
         &mut self,
@@ -126,6 +126,10 @@ impl State {
         elements.extend(layers(renderer, true));
         let placed: Vec<_> = self.workspaces[&ws].positions(viewer, now).map(|(w, p)| (w.clone(), p)).collect();
         for (window, loc) in placed.into_iter().rev() {
+            // Its border, then it: a window over it (a full-screen one, a
+            // dialog) covers both.
+            let fullscreen = self.workspaces[&ws].is_fullscreen(&window);
+            elements.extend(self.border_of(&window, loc, fullscreen).into_iter().map(ShotElement::Overlay));
             let at = (loc - window.geometry().loc).to_physical(1);
             elements.extend(
                 window.render_elements::<WaylandSurfaceRenderElement<_>>(renderer, at, scale, 1.0).into_iter().map(ShotElement::Surface),

@@ -1,4 +1,8 @@
 {
+  "colors": {
+    "seats": ["#f2f2f2", "#eb5c5c", "#5cb8f2", "#8cd973"],
+    "inactive": "#121318"
+  },
   "bindings": {
     "Mod+Return": "spawn kitty",
     "Mod+space": "spawn fuzzel",

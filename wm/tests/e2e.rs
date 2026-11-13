@@ -300,6 +300,10 @@ fn nested_in_headless_scroll() {
     let window = &windows(&tree, 2)[0];
     let (cx, cy) = centre(&tree, 1, window);
     assert_ne!(at(cx as usize, cy as usize), at(w - 4, cy as usize), "the window is drawn: {:?}", at(cx as usize, cy as usize));
+    // No title bar of its own (server-side decorations): wm's border, in
+    // seat 1's colour, just outside it.
+    let edge = at(window["x"].as_u64().unwrap() as usize - 1, cy as usize);
+    assert!(edge.iter().zip([235, 92, 92, 255]).all(|(&a, b)| a.abs_diff(b) <= 2), "seat 1's border: {edge:?}");
     let beside = at(w - 4, cy as usize);
     let background = [20, 20, 25, 255];
     assert!(beside.iter().zip(background).all(|(&a, b)| a.abs_diff(b) <= 2), "the background beside it: {beside:?}");

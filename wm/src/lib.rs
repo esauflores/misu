@@ -5,6 +5,7 @@
 
 pub mod bindings;
 pub mod capture;
+pub mod decorations;
 pub mod dmabuf;
 pub mod handlers;
 pub mod input;
@@ -20,7 +21,7 @@ use std::{collections::BTreeMap, path::PathBuf};
 
 use serde_json::{Map, Value};
 
-use crate::bindings::Bindings;
+use crate::{bindings::Bindings, decorations::Colors};
 
 /// The default configuration: wm's own bindings. A config file's bindings
 /// go over these (`null` unbinds a key).
@@ -67,6 +68,8 @@ pub struct Config {
     /// Exact libinput device names mapped to wm seat indices; others use seat 0.
     pub devices: BTreeMap<String, usize>,
     pub bindings: Bindings,
+    /// Seats' pointers and focus borders, and unfocused borders.
+    pub colors: Colors,
     /// The file read, if any, and the flags: `reload` reads it again.
     pub path: Option<PathBuf>,
     pub flags: Flags,
@@ -92,7 +95,8 @@ pub const USAGE: &str = "usage: wm [--backend winit|drm] [--config FILE] [--mod 
 The config file (JSON, default ~/.config/wm/config.json):
   {\"modifier\": \"super\", \"seats\": 2, \"startup\": [\"waybar\"],
    \"devices\": {\"USB Keyboard\": 1},
-   \"bindings\": {\"Mod+Return\": \"spawn foot\", \"Mod+w\": null}}
+   \"bindings\": {\"Mod+Return\": \"spawn foot\", \"Mod+w\": null},
+   \"colors\": {\"seats\": [\"#c1c5dd\", \"#eb5c5c\"], \"inactive\": \"#121318\"}}
 Bindings go over wm's own (see config.json in its source); null unbinds.";
 
 fn modifier(name: &str) -> Result<Modifier, String> {
@@ -139,7 +143,7 @@ impl Config {
             }
             None => Map::new(),
         };
-        if let Some(key) = file.keys().find(|k| !["modifier", "seats", "startup", "devices", "bindings"].contains(&k.as_str())) {
+        if let Some(key) = file.keys().find(|k| !["modifier", "seats", "startup", "devices", "bindings", "colors"].contains(&k.as_str())) {
             return Err(format!("unknown config key {key:?}"));
         }
 
@@ -202,7 +206,13 @@ impl Config {
         }
         let bindings = Bindings::new(specs.iter().map(|(c, a)| (c.as_str(), a.as_str())), modifier)?;
 
-        Ok(Config { backend, modifier, seats, command: flags.command.clone(), startup, devices, bindings, path, flags })
+        // wm's own colours, then the file's over them.
+        let mut colors = Colors { seats: vec![[1.0; 4]], inactive: [0.0, 0.0, 0.0, 1.0] };
+        for source in [defaults.get("colors"), file.get("colors")].into_iter().flatten() {
+            colors = colors.merged(source)?;
+        }
+
+        Ok(Config { backend, modifier, seats, command: flags.command.clone(), startup, devices, bindings, colors, path, flags })
     }
 
     pub fn from_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {

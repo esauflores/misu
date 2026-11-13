@@ -95,6 +95,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/bindings.rs`, `config.json` | key combos, default bindings |
 | `src/shot.rs` | a seat's view drawn off screen, as a PNG |
 | `src/capture.rs` | ext-image-copy-capture, foreign toplevel list |
+| `src/decorations.rs` | xdg-decoration (always server side), borders, `colors` |
 | `src/winit.rs` | nested backend and rendering |
 | `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
 | `src/dmabuf.rs` | linux-dmabuf: formats, deferred imports |
@@ -147,7 +148,7 @@ Misu's own bindings file comes with step 6; what it binds that wm lacks
 (floating, column sizes, `jump`) is step 5.
 
 Step 4: `wm msg seat N screenshot FILE` draws seat N's own view (its
-scroll position, its pointer and mark, its screen's layer surfaces) into an
+scroll position, its pointer and borders, its screen's layer surfaces) into an
 offscreen texture with the next frame and writes a PNG; the reply waits
 for it (`State::shots`, taken in each backend's frame by
 `State::take_shots`; refused while the session is paused). `wm msg` makes
@@ -174,7 +175,16 @@ the test bar and clicks through where it was.
 Menus (above): the e2e run opens a GTK popover, checks seat 0 alone is
 held, clicks outside it and checks the grab is gone and the window has the
 keyboard back. Closing on a focus change is untested.
-Left of step 5: XWayland, server-side decorations.
+Decorations: xdg-decoration answers server side whatever the app asks,
+so kitty, Firefox and Qt apps drop their title bars (GTK 4 doesn't speak
+it and keeps its own). wm draws a `BORDER` (2 px) border in the gap round
+each window, coloured by the first seat focusing it (`colors.seats`, by
+index, also the pointers'), else `colors.inactive`; none when full screen.
+Each border goes just before its window in the elements, so a window over
+it (full screen, a dialog) covers it. They replaced the focus marks.
+`colors` is a config key (defaults in `config.json`); `reload` applies it.
+Rounded corners and shadows (Misu's scroll look) need shaders: later.
+Left of step 5: XWayland.
 
 Known and left for now:
 
@@ -209,7 +219,8 @@ Misu's `AGENTS.md`) before the next.
    `misu-ai-shot` does with scroll). Screencopy for it is step 5.
 5. **Screencopy and portals** (`ext-image-copy-capture`, implemented;
    xdg-desktop-portal-wlr) for grim and screen sharing; **XWayland**;
-   popup grabs per seat (implemented); server-side decorations;
+   popup grabs per seat (implemented); server-side decorations (borders
+   implemented; rounded corners and shadows later);
    full screen (implemented).
 6. **Port Misu**: the session entry (`misu-session`), the `misu-ai-*`
    scripts to `wm msg seat N …` (most of their workarounds go away), the
