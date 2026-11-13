@@ -8,22 +8,23 @@ use smithay::{
         renderer::{
             ImportDma,
             damage::OutputDamageTracker,
-            element::{Kind, solid::SolidColorRenderElement},
             gles::GlesRenderer,
         },
         winit::{self, WinitEvent},
     },
     output::Mode,
     reexports::calloop::EventLoop,
-    utils::{Point, Rectangle, Transform},
+    utils::{Rectangle, Transform},
 };
 
-use crate::state::{CURSOR_SIZE, State, WorkspaceId, new_output};
+use crate::state::{State, new_output};
 
 pub(crate) const BACKGROUND: [f32; 4] = [0.08, 0.08, 0.1, 1.0];
 
 pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), Box<dyn std::error::Error>> {
     let (mut backend, winit) = winit::init::<GlesRenderer>()?;
+    // wm draws each seat's cursor; the host's would be one more.
+    backend.window().set_cursor_visible(false);
     let node = EGLDevice::device_for_display(backend.renderer().egl_context().display())
         .and_then(|device| device.try_get_render_node()).ok().flatten();
     state.dmabuf.enable(&state.display_handle, 0, node, backend.renderer().dmabuf_formats())?;
@@ -75,25 +76,4 @@ pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), 
         _ => {}
     })?;
     Ok(())
-}
-
-/// The same for workspace `shown` as seat `viewer` sees it, on screen or not.
-pub(crate) fn overlay_of(state: &mut State, shown: WorkspaceId, viewer: usize, now: Instant) -> Vec<SolidColorRenderElement> {
-    let mut elements = Vec::new();
-    let ws = &state.workspaces[&shown];
-    let viewer_view = ws.view(viewer, now);
-    for (index, data) in state.seats.list.iter_mut().enumerate() {
-        if data.workspace != shown {
-            continue;
-        }
-        // A seat's pointer is on its own view of the workspace; draw it over
-        // what it points at in the viewer's.
-        let pointer = data.seat.get_pointer().unwrap().current_location();
-        let half = (CURSOR_SIZE / 2) as f64;
-        let x = pointer.x + ws.view(index, now) - viewer_view;
-        let at = Point::from((x - half, pointer.y - half)).to_i32_round();
-        data.cursor.update((CURSOR_SIZE, CURSOR_SIZE), state.config.colors.seat(index));
-        elements.push(SolidColorRenderElement::from_buffer(&data.cursor, at.to_physical(1), 1.0, 1.0, Kind::Cursor));
-    }
-    elements
 }

@@ -307,6 +307,20 @@ fn nested_in_headless_scroll() {
     let beside = at(w - 4, cy as usize);
     let background = [20, 20, 25, 255];
     assert!(beside.iter().zip(background).all(|(&a, b)| a.abs_diff(b) <= 2), "the background beside it: {beside:?}");
+    // Seat 1's pointer, over the gap left of its window (no app there):
+    // the theme's arrow, tinted seat 1's red, its tip at the pointer.
+    wm.msg("seat 1 pointer 4 300");
+    let png = dir.join("cursor.png");
+    wm.msg(&format!("seat 1 screenshot {}", png.display()));
+    let (w1, pixels) = read_png(&png);
+    let red = (300..340)
+        .flat_map(|y| (4..40).map(move |x| (x, y)))
+        .filter(|&(x, y)| {
+            let p = &pixels[(y * w1 + x) * 4..(y * w1 + x) * 4 + 3];
+            p[0] > 150 && p[1] < 130 && p[2] < 130
+        })
+        .count();
+    assert!(red > 10, "seat 1's cursor is drawn in its colour: {red} red pixels");
     wm.msg(&format!("seat 0 screenshot {}", dir.join("seat0.png").display()));
     assert_eq!(read_png(&dir.join("seat0.png")).0, w);
     assert!(wm.try_msg("seat 1 screenshot relative.png").unwrap()["ok"] == false, "wm wants an absolute path");

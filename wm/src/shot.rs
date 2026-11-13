@@ -19,7 +19,7 @@ use smithay::{
             Bind, ExportMem, Offscreen,
             damage::OutputDamageTracker,
             element::{
-                AsRenderElements, Element, Kind, solid::SolidColorRenderElement,
+                AsRenderElements, memory::MemoryRenderBufferRenderElement, solid::SolidColorRenderElement,
                 surface::WaylandSurfaceRenderElement,
             },
             gles::{GlesRenderer, GlesTexture},
@@ -32,13 +32,14 @@ use smithay::{
 
 use crate::{
     state::{NOBODY, ScreenId, State, WorkspaceId},
-    winit::{BACKGROUND, overlay_of},
+    winit::BACKGROUND,
 };
 
 smithay::backend::renderer::element::render_elements! {
     pub ShotElement<=GlesRenderer>;
     Overlay=SolidColorRenderElement,
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
+    Cursor=MemoryRenderBufferRenderElement<GlesRenderer>,
 }
 
 /// A screenshot asked for, and who waits for it.
@@ -104,11 +105,8 @@ impl State {
         now: Instant,
     ) -> Vec<ShotElement> {
         let scale = Scale::from(1.0);
-        let mut elements: Vec<ShotElement> = overlay_of(self, ws, viewer, now)
-            .into_iter()
-            .filter(|e| pointers || e.kind() != Kind::Cursor)
-            .map(ShotElement::Overlay)
-            .collect();
+        let mut elements: Vec<ShotElement> =
+            if pointers { self.pointers_of(renderer, ws, viewer, now) } else { Vec::new() };
         // A full-screen window covering the screen hides the bar.
         let covered = self.workspaces[&ws].covered(viewer, now);
         let layers = |renderer: &mut GlesRenderer, upper: bool| -> Vec<ShotElement> {

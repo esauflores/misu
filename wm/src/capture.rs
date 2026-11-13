@@ -234,7 +234,7 @@ impl State {
                 if pointers {
                     return elements;
                 }
-                elements.into_iter().filter(|e| !matches!(e, ShotElement::Overlay(o) if o.kind() == Kind::Cursor)).collect()
+                elements.into_iter().filter(|e| e.kind() != Kind::Cursor).collect()
             }
             Target::Window(window) => {
                 let at = (Point::default() - window.geometry().loc).to_physical(1);

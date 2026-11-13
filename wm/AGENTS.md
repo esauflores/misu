@@ -96,6 +96,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/shot.rs` | a seat's view drawn off screen, as a PNG |
 | `src/capture.rs` | ext-image-copy-capture, foreign toplevel list |
 | `src/decorations.rs` | xdg-decoration (always server side), borders, `colors` |
+| `src/cursor.rs` | xcursor theme, per-seat cursors, tints |
 | `src/xwayland.rs` | xwayland-satellite: display, `DISPLAY`, restarts |
 | `src/winit.rs` | nested backend and rendering |
 | `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
@@ -185,6 +186,25 @@ Each border goes just before its window in the elements, so a window over
 it (full screen, a dialog) covers it. They replaced the focus marks.
 `colors` is a config key (defaults in `config.json`); `reload` applies it.
 Rounded corners and shadows (Misu's scroll look) need shaders: later.
+Step 6, phase 1 (wm usable day to day, nested-tested like step 5; then
+Misu moves over, replacing scroll, no second session; wm built with cargo
+by Misu's install.sh):
+- Cursors (done): `SeatData::cursor` is the `CursorImageStatus` the app
+  under the pointer set (`cursor_image`; `cursor-shape` gives names), reset
+  to the default over nothing (`pointer_motion`). `State::pointers_of`
+  draws them (in `view_elements`, so screens, screenshots and capture all
+  have them; capture without pointers drops `Kind::Cursor`): a surface at
+  its hotspot, or a theme image (`Cursors`, from `XCURSOR_THEME`/`SIZE`,
+  animated frames, cached per name, frame and tint). Seats past 0 are
+  tinted their colour (white × colour; the outline stays black); an app's
+  own surface can't be. Nested, the host's cursor is hidden over the
+  window. The e2e run checks seat 1's red arrow over the gap.
+- Next: input settings (xkb layout, repeat, touchpad, focus follows
+  mouse), screen settings (mode, scale, position, lid), session lock,
+  data-control (cliphist), gamma (wlsunset), idle notify/inhibit,
+  xdg-activation, layout commands (float toggle, width presets, focus
+  previous, overview, jump), agent-seat commands (keys, typing, scroll,
+  right click, focus a window), config includes.
 XWayland: through xwayland-satellite (Arch `extra`), not Smithay's X11
 WM: each X11 window arrives as an xdg toplevel of satellite's own
 connection, so layout, focus, borders, floating transients and capture

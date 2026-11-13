@@ -5,6 +5,7 @@
 
 pub mod bindings;
 pub mod capture;
+pub mod cursor;
 pub mod decorations;
 pub mod dmabuf;
 pub mod handlers;

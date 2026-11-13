@@ -79,8 +79,11 @@ keyboard pressed it; `null` unbinds a default. Keys are xkb keysym names, in
 any case; `Shift+2` is written with `2`. Command-line flags go over the
 file, and `reload` (or Mod+Ctrl+Shift+R) reads it again.
 
-Each seat on the shown workspace has its pointer drawn as a square in its
-colour, and a bar of that colour over the window it has focused. Clicking
+Each seat on the shown workspace has its pointer drawn with a real cursor:
+the app's (its own surface, or a shape it names), else the theme's arrow,
+from `XCURSOR_THEME` and `XCURSOR_SIZE`. Seat 0 has the theme as it is;
+the others have it tinted their colour. The window a seat focuses has a
+border in that colour. Clicking
 focuses without scrolling. Seats start on workspaces of their own (seat0 on
 1, seat1 on 2, …), and each screen shows one seat's.
 
@@ -185,6 +188,7 @@ logs and a screenshot in `target/tmp/e2e/`.
 - `src/shot.rs`: screenshots of a seat's own view, drawn off screen
 - `src/capture.rs`: capture for other programs (grim, screen sharing)
 - `src/decorations.rs`: no title bars from apps; borders, and the colours
+- `src/cursor.rs`: each seat's cursor, from the theme or the app
 - `src/xwayland.rs`: X11 apps, through xwayland-satellite
 - `src/winit.rs`: the nested backend and rendering
 - `src/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices

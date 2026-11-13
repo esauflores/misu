@@ -8,7 +8,7 @@ use smithay::{
     },
     input::{
         keyboard::{FilterResult, Keycode, KeyboardSource, Keysym, ModifiersState, keysyms},
-        pointer::{AxisFrame, ButtonEvent, MotionEvent},
+        pointer::{AxisFrame, ButtonEvent, CursorImageStatus, MotionEvent},
     },
     utils::{Logical, Point, Size, SERIAL_COUNTER},
     wayland::shell::wlr_layer::{KeyboardInteractivity, Layer},
@@ -150,6 +150,10 @@ impl State {
 
     pub fn pointer_motion(&mut self, seat: usize, pos: Point<f64, Logical>, time: InputTime) {
         let under = self.surface_under(seat, pos);
+        // Over nothing (the background), the default cursor: no app sets it.
+        if under.is_none() {
+            self.seats.list[seat].cursor = CursorImageStatus::default_named();
+        }
         let pointer = self.seats[seat].seat.get_pointer().unwrap();
         pointer.motion(self, under, &MotionEvent { location: pos, serial: SERIAL_COUNTER.next_serial(), time });
         pointer.frame(self);

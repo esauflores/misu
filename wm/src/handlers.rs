@@ -46,7 +46,12 @@ impl SeatHandler for State {
         &mut self.seats.state
     }
 
-    fn cursor_image(&mut self, _seat: &Seat<Self>, _image: CursorImageStatus) {}
+    /// The app under a seat's pointer sets its cursor.
+    fn cursor_image(&mut self, seat: &Seat<Self>, image: CursorImageStatus) {
+        if let Some(data) = self.seats.list.iter_mut().find(|s| &s.seat == seat) {
+            data.cursor = image;
+        }
+    }
 
     fn focus_changed(&mut self, seat: &Seat<Self>, focused: Option<&WlSurface>) {
         let dh = &self.display_handle;
@@ -56,6 +61,11 @@ impl SeatHandler for State {
 }
 
 impl PointerConstraintsHandler for State {}
+
+/// Tablets aren't routed yet; the trait is what `cursor-shape` needs.
+impl smithay::input::tablet::TabletSeatHandler for State {
+    type ToolFocus = WlSurface;
+}
 
 impl SelectionHandler for State {
     type SelectionUserData = ();

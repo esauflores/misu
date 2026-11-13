@@ -33,12 +33,12 @@ use std::{
 };
 
 use smithay::{
-    backend::renderer::{element::solid::SolidColorBuffer, utils::with_renderer_surface_state},
+    backend::renderer::utils::with_renderer_surface_state,
     desktop::{
         LayerSurface, PopupGrab, PopupManager, Space, Window, WindowSurfaceType, find_popup_root_surface, layer_map_for_output,
         space::SpaceElement,
     },
-    input::{Seat, SeatState, keyboard::Keycode},
+    input::{Seat, SeatState, keyboard::Keycode, pointer::CursorImageStatus},
     output::{Mode as OutputMode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::{EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction, generic::Generic},
@@ -106,6 +106,10 @@ pub struct State {
     pub _viewporter: smithay::wayland::viewporter::ViewporterState,
     /// X11 apps' display, while xwayland-satellite serves one.
     pub xwayland: Option<crate::xwayland::Xwayland>,
+    /// The cursor theme (see `cursor.rs`).
+    pub cursors: crate::cursor::Cursors,
+    /// Kept alive for its global: apps name their cursor's shape.
+    pub _cursor_shape: smithay::wayland::cursor_shape::CursorShapeManagerState,
     /// Kept alive for its global: apps leave their title bars to wm.
     pub decorations: smithay::wayland::shell::xdg::decoration::XdgDecorationState,
 
@@ -140,6 +144,8 @@ impl State {
             capture: crate::capture::Capture::new(&dh),
             decorations: crate::decorations::new_state(&dh),
             xwayland: None,
+            cursors: crate::cursor::Cursors::default(),
+            _cursor_shape: smithay::wayland::cursor_shape::CursorShapeManagerState::new::<Self>(&dh),
             _viewporter: smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh),
             compositor_state: CompositorState::new::<Self>(&dh),
             xdg_shell_state: XdgShellState::new::<Self>(&dh),
@@ -800,7 +806,6 @@ impl ClientData for ClientState {}
 
 // Seats
 
-pub const CURSOR_SIZE: i32 = 10;
 /// A seat index no seat has, for a screen nobody looks at: its view of any
 /// workspace is at the start.
 pub const NOBODY: usize = usize::MAX;
@@ -817,7 +822,8 @@ pub struct SeatData {
     pub menu: Option<PopupGrab<State>>,
     /// Its own setting; see `State::animates`.
     pub animate: bool,
-    pub cursor: SolidColorBuffer,
+    /// The cursor its pointer shows: what the app under it asks for.
+    pub cursor: CursorImageStatus,
 }
 
 #[derive(Default)]
@@ -843,8 +849,7 @@ impl Seats {
             layer_focus: None,
             menu: None,
             animate: true,
-            // Coloured as it is drawn (`Config::colors`).
-            cursor: SolidColorBuffer::new((CURSOR_SIZE, CURSOR_SIZE), [1.0; 4]),
+            cursor: CursorImageStatus::default_named(),
         });
         index
     }
