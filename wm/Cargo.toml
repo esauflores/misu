@@ -1,0 +1,21 @@
+[package]
+name = "wm"
+version = "0.1.0"
+edition = "2024"
+description = "A scrolling Wayland compositor with several seats and per-workspace animations"
+license = "MIT"
+
+[dependencies]
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Pinned to the commit in references/smithay, so the code there matches.
+[dependencies.smithay]
+git = "https://github.com/Smithay/smithay.git"
+rev = "9ff2c5a410e91c592e19d6fb126c299308dce119"
+default-features = false
+features = ["backend_winit", "wayland_frontend", "desktop"]
+
+[profile.dev.package."*"]
+opt-level = 2
