@@ -236,6 +236,7 @@ impl State {
                 }
                 elements.into_iter().filter(|e| e.kind() != Kind::Cursor).collect()
             }
+            Target::Window(_) if self.is_locked() => Vec::new(),
             Target::Window(window) => {
                 let at = (Point::default() - window.geometry().loc).to_physical(1);
                 window

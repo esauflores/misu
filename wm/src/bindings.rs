@@ -48,7 +48,7 @@ impl Bindings {
 
     /// What `sym` (as the keyboard gives it, unshifted) runs with `mods` held.
     pub fn get(&self, mods: &ModifiersState, sym: Keysym) -> Option<&[Action]> {
-        self.0.get(&(Mods::held(mods), lower(sym.raw()))).map(Vec::as_slice)
+        self.0.get(&pressed(mods, sym)).map(Vec::as_slice)
     }
 
     pub fn len(&self) -> usize {
@@ -58,6 +58,11 @@ impl Bindings {
     pub fn is_empty(&self) -> bool {
         self.0.is_empty()
     }
+}
+
+/// The combo `sym` pressed with `mods` held is.
+pub fn pressed(mods: &ModifiersState, sym: Keysym) -> (Mods, u32) {
+    (Mods::held(mods), lower(sym.raw()))
 }
 
 /// `Mod+Shift+Return` as the modifiers and the keysym it matches.

@@ -334,6 +334,10 @@ impl State {
 
     pub fn handle_request(&mut self, request: Request) -> Result<Value, String> {
         let seat = self.seat_index(request.seat)?;
+        let harmless = matches!(request.command, Command::Tree | Command::Help | Command::Action(Action::Reload));
+        if self.is_locked() && !harmless {
+            return Err("the session is locked".into());
+        }
         match request.command {
             Command::Tree => return Ok(self.tree()),
             Command::Help => return Ok(Value::String(HELP.into())),
@@ -499,6 +503,7 @@ impl State {
         json!({
             "wayland_display": self.socket_name.to_string_lossy(),
             "x_display": self.xwayland.as_ref().map(|x| x.display.clone()),
+            "locked": self.is_locked(),
             "screens": screens,
             "workspaces": workspaces,
             "seats": seats,

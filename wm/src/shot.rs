@@ -55,10 +55,15 @@ impl State {
         // Each frame: menus that closed let go of their seats.
         self.end_menus();
         for shot in std::mem::take(&mut self.shots) {
-            let result = self.shoot(renderer, shot.seat, &shot.path);
+            let result = if self.is_locked() {
+                Err("the session is locked".into())
+            } else {
+                self.shoot(renderer, shot.seat, &shot.path)
+            };
             reply(shot.stream, result);
         }
         self.take_captures(renderer);
+        self.lock_frame_done();
     }
 
     /// Answer the screenshots asked for with `error` (no renderer now).
@@ -87,6 +92,9 @@ impl State {
     pub fn screen_elements(&mut self, renderer: &mut GlesRenderer, id: ScreenId, now: Instant) -> Vec<ShotElement> {
         if !self.connected.contains(&id) {
             return Vec::new();
+        }
+        if self.is_locked() {
+            return self.lock_elements(renderer, id);
         }
         let Some((ws, viewer)) = self.shown_on(id) else { return Vec::new() };
         self.view_elements(renderer, ws, viewer.unwrap_or(NOBODY), Some(id), true, now)

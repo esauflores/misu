@@ -99,6 +99,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/cursor.rs` | xcursor theme, per-seat cursors, tints |
 | `src/settings.rs` | `input`: xkb, repeat, libinput options, focus follows mouse |
 | `src/screens.rs` | `screens`: modes, order, off, laptop panels |
+| `src/lock.rs` | ext-session-lock: lock surfaces, input and drawing while locked |
 | `src/xwayland.rs` | xwayland-satellite: display, `DISPLAY`, restarts |
 | `src/winit.rs` | nested backend and rendering |
 | `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
@@ -226,7 +227,22 @@ by Misu's install.sh):
   rescan. No scale (rendering is 1× throughout: `to_physical(1)`), no
   rotation and no positions beyond order (screens don't share a pointer
   space). Unit-tested; modes and the lid need the VM or laptop.
-- Next: session lock,
+- Session lock (done): `lock.rs`, `State::locked`. Every seat is locked
+  (the AI's too, by decision). While locked: `screen_elements` draws
+  `lock_elements` (the screen's lock surface under its seats' pointers,
+  `screen_pointers`); `update_keyboard` gives each seat its screen's lock
+  surface, else the first screen's that has one; `surface_under` hits only
+  lock surfaces, `window_under`/`layer_under` nothing; grabs and menus end
+  (`relock_input`, also on unlock to restore focus). Bindings run only if
+  their combo is in `Config::locked_bindings`; `handle_request` refuses all
+  but tree/help/reload; shots fail; window capture is blank. The lock is
+  confirmed (`lock_frame_done`, from `take_shots`) after two frames. A
+  live locker's lock refuses a second locker; a dead one's (smithay's
+  Defunct) stays locked until a new locker takes over. The e2e run drives
+  its own locker (`tests/support/locker.rs`, wayland-client) through lock,
+  refusal, crash, takeover and unlock. Not yet: a subscription event for
+  the lock (`tree` has `locked`).
+- Next:
   data-control (cliphist), gamma (wlsunset), idle notify/inhibit,
   xdg-activation, layout commands (float toggle, width presets, focus
   previous, overview, jump), agent-seat commands (keys, typing, scroll,

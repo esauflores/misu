@@ -13,6 +13,7 @@ pub mod input;
 pub mod ipc;
 pub mod layers;
 pub mod layout;
+pub mod lock;
 pub mod screens;
 pub mod settings;
 pub mod shot;
@@ -79,6 +80,8 @@ pub struct Config {
     /// Keyboard layout and repeat, touchpad and mouse options, focus
     /// following the mouse.
     pub input: settings::InputConfig,
+    /// The combos whose bindings run while the session is locked.
+    pub locked_bindings: std::collections::HashSet<(bindings::Mods, u32)>,
     /// Each monitor's mode, the screens' order and which are off.
     pub screens: Vec<screens::ScreenConfig>,
     /// The file read, if any, and the flags: `reload` reads it again.
@@ -109,6 +112,7 @@ The config file (JSON, default ~/.config/wm/config.json):
    \"bindings\": {\"Mod+Return\": \"spawn foot\", \"Mod+w\": null},
    \"input\": {\"keyboard\": {\"layout\": \"us\"}, \"touchpad\": {\"tap\": true}},
    \"screens\": [{\"match\": \"eDP-1\", \"mode\": \"1366x768@60\"}],
+   \"locked_bindings\": [\"XF86AudioMute\"],
    \"xwayland\": true, \"colors\": {\"seats\": [\"#c1c5dd\", \"#eb5c5c\"], \"inactive\": \"#121318\"}}
 Bindings go over wm's own (see config.json in its source); null unbinds.";
 
@@ -156,7 +160,7 @@ impl Config {
             }
             None => Map::new(),
         };
-        if let Some(key) = file.keys().find(|k| !["modifier", "seats", "startup", "devices", "bindings", "colors", "xwayland", "input", "screens"].contains(&k.as_str())) {
+        if let Some(key) = file.keys().find(|k| !["modifier", "seats", "startup", "devices", "bindings", "colors", "xwayland", "input", "screens", "locked_bindings"].contains(&k.as_str())) {
             return Err(format!("unknown config key {key:?}"));
         }
 
@@ -218,6 +222,14 @@ impl Config {
             }
         }
         let bindings = Bindings::new(specs.iter().map(|(c, a)| (c.as_str(), a.as_str())), modifier)?;
+        let mut locked_bindings = std::collections::HashSet::new();
+        for source in [defaults.get("locked_bindings"), file.get("locked_bindings")].into_iter().flatten() {
+            let list = source.as_array().ok_or("locked_bindings must be a list of combos")?;
+            for combo in list {
+                let combo = combo.as_str().ok_or("locked_bindings must be a list of combos")?;
+                locked_bindings.insert(bindings::combo_key(combo, modifier)?);
+            }
+        }
 
         // wm's own colours, then the file's over them.
         let mut colors = Colors { seats: vec![[1.0; 4]], inactive: [0.0, 0.0, 0.0, 1.0] };
@@ -242,7 +254,7 @@ impl Config {
             Some(value) => screens::parse(value)?,
         };
 
-        Ok(Config { backend, modifier, seats, command: flags.command.clone(), startup, devices, bindings, colors, xwayland, input, screens, path, flags })
+        Ok(Config { backend, modifier, seats, command: flags.command.clone(), startup, devices, bindings, colors, xwayland, input, locked_bindings, screens, path, flags })
     }
 
     pub fn from_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {

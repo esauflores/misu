@@ -136,6 +136,9 @@ impl State {
         layers: &[Layer],
         pos: Point<f64, Logical>,
     ) -> Option<(LayerSurface, WlSurface, Point<f64, Logical>)> {
+        if self.is_locked() {
+            return None;
+        }
         let id = self.screen_for(seat).filter(|id| self.connected.contains(id))?;
         let map = layer_map_for_output(&self.screens[&id].output);
         let covered = self.covered(seat);
@@ -150,6 +153,7 @@ impl State {
     /// Frame callbacks for every connected screen's layer surfaces, and
     /// forgetting the ones that went away.
     pub fn layers_frame(&self, time: Duration, throttle: Option<Duration>) {
+        self.lock_frame(time, throttle);
         for id in &self.connected {
             let output = &self.screens[id].output;
             let mut map = layer_map_for_output(output);

@@ -23,6 +23,9 @@ use std::{
 
 use serde_json::Value;
 
+#[path = "support/locker.rs"]
+mod locker;
+
 const TIMEOUT: Duration = Duration::from_secs(15);
 
 fn on_path(program: &str) -> bool {
@@ -513,6 +516,7 @@ fn nested_in_headless_scroll() {
     dialog_floats(&wm, &dir);
     menu_grabs(&wm, &dir);
     x11_apps(&wm, &dir);
+    session_lock(&wm, &dir, &runtime);
 
     // Errors come back as errors.
     let reply = wm.try_msg("seat 7 focus left").unwrap();
@@ -903,4 +907,59 @@ GLib.MainLoop().run()
         let tree = wm.tree();
         (titled(&tree, "e2e-x11").is_none() && titled(&tree, "e2e-x11-dialog").is_none()).then_some(())
     });
+}
+
+/// A locker locks every seat: both keyboards go to it, commands and
+/// screenshots are refused, the screen shows only it. A second locker is
+/// refused; the first dying leaves the session locked until another takes
+/// over and unlocks.
+fn session_lock(wm: &Wm, dir: &Path, runtime: &Path) {
+    let display = wm.sock.file_name().unwrap().to_string_lossy();
+    let display = display.strip_prefix("wm.").unwrap().strip_suffix(".sock").unwrap().to_string();
+    let refused = |line: &str| {
+        let reply = wm.try_msg(line).unwrap();
+        reply["ok"] == false && reply["error"].as_str().is_some_and(|e| e.contains("locked"))
+    };
+    let focused = focus(&wm.tree(), 0);
+
+    let mut first = locker::Locker::lock(runtime, &display, [200, 30, 30], dir);
+    first.wait("the lock", |s| s.locked);
+    assert_eq!(wm.tree()["locked"], true);
+    first.wait("both seats' keyboards on the lock surface", |s| s.drawn >= 1 && s.keyboards.len() == 2);
+    assert!(refused("seat 1 focus left"), "commands are refused while locked");
+    assert!(refused("seat 0 spawn true"));
+    assert!(refused(&format!("screenshot {}", dir.join("locked.png").display())), "screenshots are refused");
+    assert!(!dir.join("locked.png").exists());
+    if on_path("grim") {
+        let path = dir.join("grim-locked.ppm");
+        let screen = wm.tree()["screens"][0]["name"].as_str().unwrap().to_string();
+        let ok = Command::new("grim")
+            .args(["-t", "ppm", "-o", &screen])
+            .arg(&path)
+            .env("XDG_RUNTIME_DIR", runtime)
+            .env("WAYLAND_DISPLAY", &display)
+            .status()
+            .unwrap()
+            .success();
+        assert!(ok, "grim while locked");
+        let (w, h, rgb) = read_ppm(&path);
+        let red = rgb.as_chunks::<3>().0.iter().filter(|p| p[0] > 150 && p[1] < 80 && p[2] < 80).count();
+        assert!(red > w * h * 9 / 10, "the screen shows only the locker: {red} of {} pixels red", w * h);
+    }
+
+    let mut second = locker::Locker::lock(runtime, &display, [30, 200, 30], dir);
+    second.wait("the second locker's refusal", |s| s.finished);
+    assert!(!second.seen().locked);
+    drop(second);
+
+    first.crash();
+    sleep(Duration::from_millis(300));
+    assert_eq!(wm.tree()["locked"], true, "a crashed locker leaves the session locked");
+    assert!(refused("seat 0 focus left"));
+    let mut third = locker::Locker::lock(runtime, &display, [30, 30, 200], dir);
+    third.wait("a new locker taking over", |s| s.locked && s.keyboards.len() == 2);
+    third.unlock();
+    wait_for("the unlock", || (wm.tree()["locked"] == false).then_some(()));
+    assert_eq!(focus(&wm.tree(), 0), focused, "focus is as it was");
+    assert_eq!(wm.try_msg("seat 0 focus left").unwrap()["ok"], true);
 }

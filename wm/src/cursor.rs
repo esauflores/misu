@@ -152,37 +152,63 @@ impl State {
             })
             .collect();
         for (index, at, status) in seats {
-            let at = at.to_i32_round::<i32>();
-            match status {
-                CursorImageStatus::Hidden => {}
-                CursorImageStatus::Surface(surface) => {
-                    let hotspot = with_states(&surface, |states| {
-                        states
-                            .data_map
-                            .get::<CursorImageSurfaceData>()
-                            .map(|d| d.lock().unwrap().hotspot)
-                            .unwrap_or_default()
-                    });
-                    let loc = (at - hotspot).to_physical(1);
-                    elements.extend(
-                        render_elements_from_surface_tree(renderer, &surface, loc, Scale::from(1.0), 1.0, Kind::Cursor)
-                            .into_iter()
-                            .map(ShotElement::Surface),
-                    );
-                }
-                CursorImageStatus::Named(icon) => {
-                    let tint = (index > 0).then(|| self.config.colors.seat(index));
-                    if let Some((buffer, hotspot)) = self.cursors.get(icon, tint) {
-                        let loc = (at - hotspot).to_f64().to_physical(1.0);
-                        if let Ok(element) =
-                            MemoryRenderBufferRenderElement::from_buffer(renderer, loc, &buffer, None, None, None, Kind::Cursor)
-                        {
-                            elements.push(ShotElement::Cursor(element));
-                        }
+            self.pointer_element(renderer, index, at, status, &mut elements);
+        }
+        elements
+    }
+
+    /// The pointers of the seats on screen `id` while locked: where they
+    /// are on it, with no view to scroll.
+    pub fn screen_pointers(&mut self, renderer: &mut GlesRenderer, id: crate::state::ScreenId) -> Vec<ShotElement> {
+        let mut elements = Vec::new();
+        let seats: Vec<(usize, Point<f64, Logical>, CursorImageStatus)> = (0..self.seats.list.len())
+            .filter(|&i| self.screen_for(i) == Some(id))
+            .map(|i| (i, self.seats[i].seat.get_pointer().unwrap().current_location(), self.seats[i].cursor.clone()))
+            .collect();
+        for (index, at, status) in seats {
+            self.pointer_element(renderer, index, at, status, &mut elements);
+        }
+        elements
+    }
+
+    /// Seat `index`'s pointer at `at`, drawn as `status` says.
+    fn pointer_element(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        index: usize,
+        at: Point<f64, Logical>,
+        status: CursorImageStatus,
+        elements: &mut Vec<ShotElement>,
+    ) {
+        let at = at.to_i32_round::<i32>();
+        match status {
+            CursorImageStatus::Hidden => {}
+            CursorImageStatus::Surface(surface) => {
+                let hotspot = with_states(&surface, |states| {
+                    states
+                        .data_map
+                        .get::<CursorImageSurfaceData>()
+                        .map(|d| d.lock().unwrap().hotspot)
+                        .unwrap_or_default()
+                });
+                let loc = (at - hotspot).to_physical(1);
+                elements.extend(
+                    render_elements_from_surface_tree(renderer, &surface, loc, Scale::from(1.0), 1.0, Kind::Cursor)
+                        .into_iter()
+                        .map(ShotElement::Surface),
+                );
+            }
+            CursorImageStatus::Named(icon) => {
+                let tint = (index > 0).then(|| self.config.colors.seat(index));
+                if let Some((buffer, hotspot)) = self.cursors.get(icon, tint) {
+                    let loc = (at - hotspot).to_f64().to_physical(1.0);
+                    if let Ok(element) =
+                        MemoryRenderBufferRenderElement::from_buffer(renderer, loc, &buffer, None, None, None, Kind::Cursor)
+                    {
+                        elements.push(ShotElement::Cursor(element));
                     }
                 }
             }
         }
-        elements
     }
 }

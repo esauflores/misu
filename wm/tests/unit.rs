@@ -843,6 +843,17 @@ mod options {
             assert!(load(bad, Flags::default()).is_err(), "{bad}");
         }
         assert!(Bindings::new([("Mod+a", "close;;focus left")], Modifier::Alt).is_ok());
+        assert!(load(r#"{"locked_bindings":"XF86AudioMute"}"#, Flags::default()).is_err());
+        assert!(load(r#"{"locked_bindings":["Hyper+a"]}"#, Flags::default()).is_err());
+    }
+
+    #[test]
+    fn locked_bindings_are_combos() {
+        let c = load(r#"{"locked_bindings":["XF86AudioMute", "Mod+Shift+p"]}"#, Flags::default()).unwrap();
+        let mute = wm::bindings::pressed(&mods(false, false, false), sym(keysyms::KEY_XF86AudioMute));
+        let combo = wm::bindings::pressed(&mods(true, false, true), sym(keysyms::KEY_P));
+        assert!(c.locked_bindings.contains(&mute) && c.locked_bindings.contains(&combo));
+        assert!(!c.locked_bindings.contains(&wm::bindings::pressed(&mods(true, false, false), sym(keysyms::KEY_Return))));
     }
 }
 

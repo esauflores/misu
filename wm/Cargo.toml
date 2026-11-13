@@ -23,5 +23,10 @@ features = ["backend_winit", "wayland_frontend", "desktop", "backend_drm", "back
 git = "https://github.com/Smithay/smithay.git"
 rev = "9ff2c5a410e91c592e19d6fb126c299308dce119"
 
+[dev-dependencies]
+# The e2e run's own session locker.
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+
 [profile.dev.package."*"]
 opt-level = 2

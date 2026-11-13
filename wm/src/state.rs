@@ -114,6 +114,9 @@ pub struct State {
     pub screen_generation: u64,
     /// The laptop's lid is closed: its panel is off.
     pub lid_closed: bool,
+    pub session_lock: smithay::wayland::session_lock::SessionLockManagerState,
+    /// The session lock, while locked (see `lock.rs`).
+    pub locked: Option<crate::lock::Lock>,
     /// The cursor theme (see `cursor.rs`).
     pub cursors: crate::cursor::Cursors,
     /// Kept alive for its global: apps name their cursor's shape.
@@ -156,6 +159,8 @@ impl State {
             input_generation: 0,
             screen_generation: 0,
             lid_closed: false,
+            session_lock: crate::lock::new_state(&dh),
+            locked: None,
             _cursor_shape: smithay::wayland::cursor_shape::CursorShapeManagerState::new::<Self>(&dh),
             _viewporter: smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh),
             compositor_state: CompositorState::new::<Self>(&dh),
@@ -339,6 +344,7 @@ impl State {
             let animate = self.animates_workspace(ws);
             self.ws(ws).set_area(area, size, now, animate);
         }
+        self.resize_lock_surfaces();
     }
 
     pub fn screen_of(&self, ws: WorkspaceId) -> Option<ScreenId> {
@@ -433,6 +439,9 @@ impl State {
     /// may not be on screen.
     /// Layer surfaces of its screen are over and under the windows.
     pub fn surface_under(&self, seat: usize, pos: Point<f64, Logical>) -> Option<(WlSurface, Point<f64, Logical>)> {
+        if self.is_locked() {
+            return self.lock_surface_under(seat, pos);
+        }
         let layer = |layers: &[Layer]| self.layer_under(seat, layers, pos).map(|(_, s, p)| (s, p));
         layer(&[Layer::Overlay, Layer::Top])
             .or_else(|| {
@@ -448,6 +457,9 @@ impl State {
     /// The window under `pos` for `seat` (its popups too), and where it is
     /// drawn.
     pub fn window_under(&self, seat: usize, pos: Point<f64, Logical>) -> Option<(Window, Point<i32, Logical>)> {
+        if self.is_locked() {
+            return None;
+        }
         let ws = &self.workspaces[&self.seats[seat].workspace];
         let placed: Vec<_> = ws.positions(seat, Instant::now()).collect();
         placed.into_iter().rev().find_map(|(window, loc)| {
@@ -603,6 +615,7 @@ impl State {
     pub fn update_keyboard(&mut self, seat: usize) {
         let data = &self.seats[seat];
         let surface = match &data.layer_focus {
+            _ if self.is_locked() => self.seat_lock_surface(seat).cloned(),
             Some(layer) => Some(layer.wl_surface().clone()),
             None => data.focus.as_ref().and_then(|w| w.toplevel()).map(|t| t.wl_surface().clone()),
         };

@@ -86,6 +86,13 @@ monitors by connector (`eDP-1`) or identity, each with an optional `mode`
 (`"1366x768@60"`) and `off`; they go left to right in the list's order. A
 laptop's panel turns off while its lid is closed. See `src/screens.rs`.
 
+A session locker (swaylock, hyprlock: `ext-session-lock`) locks every seat,
+an agent's too: screens show only the locker, every keyboard goes to it,
+`wm msg` refuses all but `tree`, `help`, `subscribe` and `reload`, and
+screenshots fail. Only the combos listed in `locked_bindings`
+(`["XF86AudioMute", "XF86AudioRaiseVolume"]`) run. A locker that crashes
+leaves the session locked; start another to unlock. See `src/lock.rs`.
+
 Each seat on the shown workspace has its pointer drawn with a real cursor:
 the app's (its own surface, or a shape it names), else the theme's arrow,
 from `XCURSOR_THEME` and `XCURSOR_SIZE`. Seat 0 has the theme as it is;
