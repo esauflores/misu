@@ -36,6 +36,8 @@ pub enum Action {
     MoveToWorkspace(usize, bool),
     /// On, off, or toggle (None), for the seat.
     Animations(Option<bool>),
+    /// The focused window full screen: on, off, or toggle (None).
+    Fullscreen(Option<bool>),
     /// Nested only: send the host's input to the next seat.
     NextSeat,
     /// Read the config file again (bindings, modifier, devices).
@@ -236,6 +238,11 @@ impl State {
             Action::Workspace(index) => self.switch_workspace(seat, index),
             Action::MoveToWorkspace(index, follow) => self.move_to_workspace(seat, index, follow),
             Action::Animations(on) => self.set_animations(seat, on),
+            Action::Fullscreen(on) => {
+                if let Some(window) = self.seats[seat].focus.clone() {
+                    self.set_fullscreen(&window, on, Some(seat));
+                }
+            }
             Action::NextSeat => {
                 self.seats.active = (self.seats.active + 1) % self.seats.list.len();
                 self.show_active_seat();

@@ -10,7 +10,8 @@ built around several seats on one screen:
 - **One app per screen**: each window gets a column as wide as the screen,
   and a workspace is a row of them to scroll along. A window an app opens
   for another of its windows (a dialog, a file picker) floats centred over
-  that one at its own size instead.
+  that one at its own size instead. Full screen (`Mod+f`, or the app
+  asking) a window covers the whole screen, bar and all.
 - **Animations are per seat**: a seat's changes animate when it has them on
   and it is the one on screen; everything else happens at once. A change in
   the middle of an animation carries on from where it is, never restarts.
@@ -46,7 +47,7 @@ cargo run -- --seats 3 --mod super
 
 Keys are bound in a JSON config file, `~/.config/wm/config.json` (or
 `--config FILE`), over wm's own defaults in [`config.json`](config.json):
-Mod+Return a terminal, Mod+Left/Right focus, Mod+Shift+Left/Right move,
+Mod+Return a terminal, Mod+f full screen, Mod+Left/Right focus, Mod+Shift+Left/Right move,
 Mod+1…9 workspaces, Mod+Shift+1…9 take the window there, Mod+Tab the next
 seat (nested), Mod+Ctrl+Shift+R reload. Nothing quits
 wm from the keyboard: `wm msg quit` does. `Mod` is
@@ -185,5 +186,5 @@ logs and a screenshot in `target/tmp/e2e/`.
 
 - Screen sharing checked through the portal, dma-buf capture, a
   sway-compatible IPC
-- Full screen, popups and grabs per seat
+- Popups and grabs per seat
 - Server-side decorations (kitty draws its own title bar for now)

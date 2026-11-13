@@ -606,11 +606,36 @@ ShellRoot {
         eprintln!("layer shell: fuzzel skipped, not on PATH");
     }
 
+    // Full screen: the focused window covers the screen, bar and all; the
+    // bar is neither drawn nor clicked; back, it is below the bar again.
+    wm.msg("seat 0 fullscreen");
+    let tree = wm.tree();
+    let window = windows(&tree, 1).into_iter().find(|w| w["id"] == focused).unwrap();
+    let screen = &tree["screens"][0];
+    assert_eq!(window["fullscreen"], true);
+    assert_eq!((&window["width"], &window["height"]), (&screen["width"], &screen["height"]));
+    assert_eq!(window["y"], 0);
+    assert_eq!(window["x"].as_f64().unwrap() - view(&tree, 0), 0.0, "seat 0's view has it at the edge");
+    let png = dir.join("fullscreen.png");
+    wait_for("the bar hidden under the window", || {
+        wm.msg(&format!("seat 0 screenshot {}", png.display()));
+        let (w, pixels) = read_png(&png);
+        let at = |x: usize, y: usize| pixels[(y * w + x) * 4..(y * w + x) * 4 + 3].to_vec();
+        // Steel blue is the bar; the window's own is anything else.
+        (at(w / 2, 10) != [70, 130, 180]).then_some(())
+    });
+    wm.msg("seat 0 click 300 10");
+    assert_eq!(seat(&wm.tree(), 0)["pointer"]["over"], focused, "the click lands on the window, not the bar");
+    wm.msg("seat 0 fullscreen off");
+    let tree = wm.tree();
+    let window = windows(&tree, 1).into_iter().find(|w| w["id"] == focused).unwrap();
+    assert_eq!(window["fullscreen"], false);
+    assert!(window["y"].as_i64().unwrap() > 30, "below the bar again: {window}");
+
     kill(&bar);
     wait_for("the bar's room back", || (wm.tree()["screens"][0]["area"] == full).then_some(()));
 }
 
-/// A PNG's width and RGBA pixels.
 /// Other programs capture through ext-image-copy-capture: grim takes the
 /// screen as seat 0's screenshot shows it, and seat 1's window, though no
 /// screen shows it, by its id in the tree.
@@ -674,6 +699,7 @@ fn read_ppm(path: &Path) -> (usize, usize, Vec<u8>) {
     (w, h, data[i + 1..].to_vec())
 }
 
+/// A PNG's width and RGBA pixels.
 fn read_png(path: &Path) -> (usize, Vec<u8>) {
     let decoder = png::Decoder::new(std::io::BufReader::new(fs::File::open(path).unwrap()));
     let mut reader = decoder.read_info().unwrap();

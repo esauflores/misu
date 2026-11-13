@@ -15,6 +15,7 @@ mod layout {
     struct Fake {
         id: u32,
         size: Rc<Cell<Option<(i32, i32)>>>,
+        fullscreen: Rc<Cell<bool>>,
     }
 
     impl PartialEq for Fake {
@@ -24,8 +25,9 @@ mod layout {
     }
 
     impl Tile for Fake {
-        fn configure(&self, size: Size<i32, Logical>) {
+        fn configure(&self, size: Size<i32, Logical>, fullscreen: bool) {
             self.size.set(Some((size.w, size.h)));
+            self.fullscreen.set(fullscreen);
         }
 
         /// What it was told, else a dialog's 300×200.
@@ -37,7 +39,7 @@ mod layout {
     const DIALOG: (i32, i32) = (300, 200);
 
     fn fake(id: u32) -> Fake {
-        Fake { id, size: Rc::default() }
+        Fake { id, size: Rc::default(), fullscreen: Rc::default() }
     }
 
     const OUT: (i32, i32) = (1000, 600);
@@ -301,14 +303,39 @@ mod layout {
         let (mut ws, windows) = workspace(2, now);
         // A 30 px bar along the top: the columns start under it and are
         // that much shorter; along the screen nothing changes.
-        ws.set_area(Rectangle::new((0, 30).into(), (OUT.0, OUT.1 - 30).into()), now, false);
+        ws.set_area(Rectangle::new((0, 30).into(), (OUT.0, OUT.1 - 30).into()), out(), now, false);
         assert_eq!(windows[0].size.get(), Some((column_width(), OUT.1 - 30 - 2 * GAP)));
         let pos: Vec<_> = ws.positions(ME, now).map(|(w, p)| (w.id, (p.x, p.y))).collect();
         assert_eq!(pos, vec![(1, (GAP, 30 + GAP)), (2, (2 * GAP + column_width(), 30 + GAP))]);
         assert_eq!(ws.targets().next().unwrap().1.loc.y, 30 + GAP);
         // One along the left edge shifts them right.
-        ws.set_area(Rectangle::new((40, 0).into(), (OUT.0 - 40, OUT.1).into()), now, false);
+        ws.set_area(Rectangle::new((40, 0).into(), (OUT.0 - 40, OUT.1).into()), out(), now, false);
         assert_eq!(ws.positions(ME, now).next().unwrap().1, (40 + GAP, GAP).into());
+    }
+
+    #[test]
+    fn full_screen_covers_the_whole_screen_bar_and_all() {
+        let now = Instant::now();
+        let (mut ws, windows) = workspace(3, now);
+        // A 40 px bar on the left.
+        ws.set_area(Rectangle::new((40, 0).into(), (OUT.0 - 40, OUT.1).into()), out(), now, false);
+        assert!(ws.set_fullscreen(&windows[1], None, now, false));
+        assert!(ws.is_fullscreen(&windows[1]));
+        assert_eq!((windows[1].size.get(), windows[1].fullscreen.get()), (Some(OUT), true));
+        ws.reveal(ME, &windows[1], now, false);
+        let rects: Vec<_> = ws.positions(ME, now).map(|(w, p)| (w.id, p.x)).collect();
+        assert_eq!(rects[1], (2, 0), "at the screen's corner, over the bar");
+        assert_eq!(ws.positions(ME, now).nth(1).unwrap().1.y, 0);
+        assert!(rects[0].1 + width_on(OUT.0 - 40) <= 40, "the one before is under the bar, out of sight: {rects:?}");
+        assert!(rects[2].1 >= OUT.0, "the one after starts past the screen: {rects:?}");
+        assert!(ws.covered(ME, now));
+        assert!(!ws.covered(OTHER, now), "another seat's view doesn't have it at the edge");
+
+        // Back: its column's size again, and nothing covers.
+        assert!(ws.set_fullscreen(&windows[1], Some(false), now, false));
+        assert!(!ws.set_fullscreen(&windows[1], Some(false), now, false), "already");
+        assert_eq!((windows[1].size.get(), windows[1].fullscreen.get()), (Some((width_on(OUT.0 - 40), OUT.1 - 2 * GAP)), false));
+        assert!(!ws.covered(ME, now));
     }
 }
 

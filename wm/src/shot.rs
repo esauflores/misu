@@ -31,7 +31,7 @@ use smithay::{
 };
 
 use crate::{
-    state::{ScreenId, State, WorkspaceId},
+    state::{NOBODY, ScreenId, State, WorkspaceId},
     winit::{BACKGROUND, overlay_of},
 };
 
@@ -79,6 +79,16 @@ impl State {
         Ok(json!({ "path": path, "width": size.w, "height": size.h }))
     }
 
+    /// What screen `id` shows: its viewer's view, or (unplugged, `wm msg
+    /// screen-remove`) nothing but the background.
+    pub fn screen_elements(&mut self, renderer: &mut GlesRenderer, id: ScreenId, now: Instant) -> Vec<ShotElement> {
+        if !self.connected.contains(&id) {
+            return Vec::new();
+        }
+        let Some((ws, viewer)) = self.shown_on(id) else { return Vec::new() };
+        self.view_elements(renderer, ws, viewer.unwrap_or(NOBODY), Some(id), true, now)
+    }
+
     /// Workspace `ws` as seat `viewer` sees it, with `screen`'s layer
     /// surfaces, front to back: pointers (if `pointers`) and focus marks,
     /// layers above the windows, the windows, layers below.
@@ -97,12 +107,15 @@ impl State {
             .filter(|e| pointers || e.kind() != Kind::Cursor)
             .map(ShotElement::Overlay)
             .collect();
+        // A full-screen window covering the screen hides the bar.
+        let covered = self.workspaces[&ws].covered(viewer, now);
         let layers = |renderer: &mut GlesRenderer, upper: bool| -> Vec<ShotElement> {
             let Some(id) = screen else { return Vec::new() };
             let map = layer_map_for_output(&self.screens[&id].output);
             map.layers()
                 .rev()
                 .filter(|l| matches!(l.layer(), Layer::Overlay | Layer::Top) == upper)
+                .filter(|l| !(covered && l.layer() == Layer::Top))
                 .filter_map(|l| map.layer_geometry(l).map(|geo| (geo.loc, l)))
                 .flat_map(|(loc, l)| l.render_elements::<WaylandSurfaceRenderElement<_>>(renderer, loc.to_physical(1), scale, 1.0))
                 .map(ShotElement::Surface)

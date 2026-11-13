@@ -3,7 +3,7 @@
 
 use crate::{
     state::{ConnectorId, ScreenId, State},
-    winit::{BACKGROUND, overlay},
+    winit::BACKGROUND,
 };
 use smithay::{
     backend::{
@@ -21,13 +21,11 @@ use smithay::{
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             ImportDma,
-            element::{solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement},
             gles::GlesRenderer,
         },
         session::{Event as SessionEvent, Session, libseat::LibSeatSession},
         udev::{UdevBackend, UdevEvent},
     },
-    desktop::space::SpaceRenderElements,
     input::keyboard::KeyboardSource,
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
@@ -55,12 +53,6 @@ use std::{
 
 type Error = Box<dyn std::error::Error>;
 type Compositor = DrmCompositor<GbmAllocator<DeviceFd>, GbmFramebufferExporter<DeviceFd>, (), DeviceFd>;
-smithay::backend::renderer::element::render_elements! {
-    Elements<=GlesRenderer>;
-    Overlay=SolidColorRenderElement,
-    Space=SpaceRenderElements<GlesRenderer, WaylandSurfaceRenderElement<GlesRenderer>>,
-}
-
 struct Surface {
     screen: ScreenId,
     connector: connector::Handle,
@@ -486,23 +478,7 @@ impl Hardware {
                 let output = state.screens[&surface.screen].output.clone();
                 let refresh = output.current_mode().map_or(60_000, |mode| mode.refresh).max(1);
                 surface.next_frame = now + Duration::from_secs_f64(1000.0 / refresh as f64);
-                let mut elements: Vec<Elements> = overlay(state, surface.screen, now)
-                    .into_iter()
-                    .map(Elements::Overlay)
-                    .collect();
-                if state.connected.contains(&surface.screen) {
-                    match state.screens[&surface.screen].space.render_elements_for_output(
-                        &mut gpu.renderer,
-                        &output,
-                        1.0,
-                    ) {
-                        Ok(windows) => elements.extend(windows.into_iter().map(Elements::Space)),
-                        Err(err) => {
-                            tracing::warn!(?err, "output elements failed");
-                            continue;
-                        }
-                    }
-                }
+                let elements = state.screen_elements(&mut gpu.renderer, surface.screen, now);
                 let rendered =
                     match surface
                         .compositor

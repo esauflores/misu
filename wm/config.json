@@ -3,6 +3,7 @@
     "Mod+Return": "spawn kitty",
     "Mod+space": "spawn fuzzel",
     "Mod+w": "close",
+    "Mod+f": "fullscreen",
 
     "Mod+Left": "focus left",
     "Mod+Right": "focus right",

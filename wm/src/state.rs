@@ -39,6 +39,7 @@ use smithay::{
     output::{Mode as OutputMode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::{EventLoop, Interest, LoopHandle, LoopSignal, Mode, PostAction, generic::Generic},
+        wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
             Display, DisplayHandle, Resource, backend::ClientData, protocol::wl_surface::WlSurface,
         },
@@ -140,7 +141,7 @@ impl State {
         // Each seat starts on a workspace of its own, which the first screen
         // to appear takes.
         for _ in 0..state.config.seats.max(1) {
-            let ws = state.new_workspace(Rectangle::from_size(FALLBACK_SIZE.into()));
+            let ws = state.new_workspace(None);
             state.seats.add(&dh, ws);
         }
         state
@@ -169,11 +170,16 @@ impl State {
 
     // Screens and workspaces
 
-    fn new_workspace(&mut self, area: Rectangle<i32, Logical>) -> WorkspaceId {
+    /// A new workspace, laid out for `screen` (or the fallback size).
+    fn new_workspace(&mut self, screen: Option<ScreenId>) -> WorkspaceId {
         let id = WorkspaceId(self.next_workspace);
         self.next_workspace += 1;
-        let mut ws = Workspace::new(area.size);
-        ws.set_area(area, Instant::now(), false);
+        let (area, size) = match screen {
+            Some(screen) => (self.screen_area(screen), self.screen_size(screen)),
+            None => (Rectangle::from_size(FALLBACK_SIZE.into()), FALLBACK_SIZE.into()),
+        };
+        let mut ws = Workspace::new(size);
+        ws.set_area(area, size, Instant::now(), false);
         self.workspaces.insert(id, ws);
         id
     }
@@ -206,7 +212,7 @@ impl State {
                     self.detach_workspace(ws);
                     ws
                 }
-                None => self.new_workspace(Rectangle::from_size(FALLBACK_SIZE.into())),
+                None => self.new_workspace(None),
             };
             workspaces.push(ws);
         }
@@ -265,10 +271,10 @@ impl State {
     /// or a bar took or gave back room).
     pub fn resize_screen(&mut self, id: ScreenId) {
         let now = Instant::now();
-        let area = self.screen_area(id);
+        let (area, size) = (self.screen_area(id), self.screen_size(id));
         for ws in self.screens[&id].workspaces.clone() {
             let animate = self.animates_workspace(ws);
-            self.ws(ws).set_area(area, now, animate);
+            self.ws(ws).set_area(area, size, now, animate);
         }
     }
 
@@ -294,7 +300,7 @@ impl State {
     pub fn nth_workspace(&mut self, seat: usize, index: usize) -> Option<WorkspaceId> {
         let screen = self.screen_for(seat)?;
         while self.screens[&screen].workspaces.len() <= index {
-            let ws = self.new_workspace(self.screen_area(screen));
+            let ws = self.new_workspace(Some(screen));
             self.screens.get_mut(&screen).unwrap().workspaces.push(ws);
         }
         Some(self.screens[&screen].workspaces[index])
@@ -303,8 +309,7 @@ impl State {
     /// Take `ws` off its screen, leaving a fresh one there if it was the last.
     fn detach_workspace(&mut self, ws: WorkspaceId) {
         let Some(from) = self.screen_of(ws) else { return };
-        let area = self.screen_area(from);
-        let leftover = (self.screens[&from].workspaces.len() == 1).then(|| self.new_workspace(area));
+        let leftover = (self.screens[&from].workspaces.len() == 1).then(|| self.new_workspace(Some(from)));
         let screen = self.screens.get_mut(&from).unwrap();
         screen.workspaces.retain(|&w| w != ws);
         screen.workspaces.extend(leftover);
@@ -441,7 +446,39 @@ impl State {
         let after = self.seats[seat].focus.clone().filter(|w| self.workspaces[&ws].contains(w));
         let animate = self.animates_workspace(ws);
         self.ws(ws).add(window.clone(), after.as_ref(), now, animate);
-        self.focus(seat, Some(window), true);
+        self.focus(seat, Some(window.clone()), true);
+        // Asked for before it showed (see `fullscreen_request`).
+        if window.toplevel().is_some_and(|t| t.with_pending_state(|s| s.states.contains(xdg_toplevel::State::Fullscreen))) {
+            self.set_fullscreen(&window, Some(true), Some(seat));
+        }
+    }
+
+    /// Make `window` full screen or not (`None`: the other way). `by`, the
+    /// seat that asked, has its view brought to it; else every seat
+    /// focusing it.
+    pub fn set_fullscreen(&mut self, window: &Window, on: Option<bool>, by: Option<usize>) {
+        let now = Instant::now();
+        let Some(ws) = self.workspace_of(window) else { return };
+        let animate = self.animates_workspace(ws);
+        if !self.ws(ws).set_fullscreen(window, on, now, animate) {
+            return;
+        }
+        let seats: Vec<usize> = match by {
+            Some(seat) => vec![seat],
+            None => (0..self.seats.list.len()).filter(|&s| self.seats[s].focus.as_ref() == Some(window)).collect(),
+        };
+        for seat in seats {
+            if self.seats[seat].workspace == ws {
+                let animate = self.animates(seat);
+                self.ws(ws).reveal(seat, window, now, animate);
+            }
+        }
+    }
+
+    /// Whether `seat`'s view has a full-screen window covering its screen
+    /// (the bar gives way).
+    pub fn covered(&self, seat: usize) -> bool {
+        self.seats.list.get(seat).is_some_and(|s| self.workspaces[&s.workspace].covered(seat, Instant::now()))
     }
 
     pub fn remove_window(&mut self, window: &Window) {
@@ -561,8 +598,8 @@ impl State {
         if self.screen_of(ws) != Some(to) {
             self.detach_workspace(ws);
             self.screens.get_mut(&to).unwrap().workspaces.push(ws);
-            let (area, animate) = (self.screen_area(to), self.animates_workspace(ws));
-            self.ws(ws).set_area(area, Instant::now(), animate);
+            let (area, size, animate) = (self.screen_area(to), self.screen_size(to), self.animates_workspace(ws));
+            self.ws(ws).set_area(area, size, Instant::now(), animate);
         }
         self.go_to(seat, ws);
         Ok(())

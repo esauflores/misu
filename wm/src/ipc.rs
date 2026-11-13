@@ -70,6 +70,7 @@ pub const HELP: &str = "[seat N] COMMAND, where COMMAND is one of:
   move-to-workspace N [follow]
                             send the focused window there (and go with it)
   animations on|off|toggle  for the seat (they show while it's on screen)
+  fullscreen [on|off|toggle] the focused window over the whole screen
   pointer X Y               move the seat's pointer
   click [X Y]               left click, after moving there if given
   next-seat                 drive the next seat with the host's input
@@ -152,6 +153,12 @@ pub fn parse(line: &str) -> Result<Request, String> {
             ["off"] => Some(false),
             ["toggle"] | [] => None,
             _ => return Err("animations takes on, off or toggle".into()),
+        })),
+        "fullscreen" => Command::Action(Action::Fullscreen(match args {
+            ["on"] => Some(true),
+            ["off"] => Some(false),
+            ["toggle"] | [] => None,
+            _ => return Err("fullscreen takes on, off or toggle".into()),
         })),
         "pointer" => match args {
             [x, y] => Command::Pointer(number(x)?, number(y)?),
@@ -448,6 +455,7 @@ impl State {
                             "x": r.loc.x, "y": r.loc.y, "width": r.size.w, "height": r.size.h,
                             // Over its parent (a dialog), at its own size.
                             "floating": self.workspaces[&id].is_floating(w),
+                            "fullscreen": self.workspaces[&id].is_fullscreen(w),
                             "configured": w.toplevel().is_some_and(|t| t.is_initial_configure_sent()),
                             "activated": w.toplevel().is_some_and(|t| t.with_pending_state(|s| s.states.contains(Activated))),
                         });

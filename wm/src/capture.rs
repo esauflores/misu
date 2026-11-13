@@ -20,7 +20,7 @@ use std::{sync::Mutex, time::Instant};
 use smithay::{
     backend::renderer::{
         damage::OutputDamageTracker,
-        element::{AsRenderElements, surface::WaylandSurfaceRenderElement},
+        element::{AsRenderElements, Element, Kind, surface::WaylandSurfaceRenderElement},
         gles::GlesRenderer,
     },
     desktop::Window,
@@ -45,7 +45,7 @@ use smithay::{
 
 use crate::{
     shot::{ShotElement, render_rgba},
-    state::{NOBODY, ScreenId, State, window_id, window_info},
+    state::{ScreenId, State, window_id, window_info},
 };
 
 pub struct Capture {
@@ -230,11 +230,11 @@ impl State {
     fn target_elements(&mut self, renderer: &mut GlesRenderer, target: &Target, pointers: bool, now: Instant) -> Vec<ShotElement> {
         match target {
             Target::Screen(id) => {
-                if !self.connected.contains(id) {
-                    return Vec::new();
+                let elements = self.screen_elements(renderer, *id, now);
+                if pointers {
+                    return elements;
                 }
-                let Some((ws, viewer)) = self.shown_on(*id) else { return Vec::new() };
-                self.view_elements(renderer, ws, viewer.unwrap_or(NOBODY), Some(*id), pointers, now)
+                elements.into_iter().filter(|e| !matches!(e, ShotElement::Overlay(o) if o.kind() == Kind::Cursor)).collect()
             }
             Target::Window(window) => {
                 let at = (Point::default() - window.geometry().loc).to_physical(1);

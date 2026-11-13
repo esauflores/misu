@@ -138,7 +138,8 @@ impl State {
     ) -> Option<(LayerSurface, WlSurface, Point<f64, Logical>)> {
         let id = self.screen_for(seat).filter(|id| self.connected.contains(id))?;
         let map = layer_map_for_output(&self.screens[&id].output);
-        layers.iter().find_map(|&layer| {
+        let covered = self.covered(seat);
+        layers.iter().filter(|&&l| !(covered && l == Layer::Top)).find_map(|&layer| {
             let found = map.layer_under(layer, pos)?;
             let loc = map.layer_geometry(found)?.loc;
             let (surface, at) = found.surface_under(pos - loc.to_f64(), WindowSurfaceType::ALL)?;

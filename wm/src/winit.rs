@@ -18,7 +18,7 @@ use smithay::{
     utils::{Point, Rectangle, Transform},
 };
 
-use crate::state::{CURSOR_SIZE, MARK_HEIGHT, NOBODY, ScreenId, State, WorkspaceId, new_output};
+use crate::state::{CURSOR_SIZE, MARK_HEIGHT, State, WorkspaceId, new_output};
 
 pub(crate) const BACKGROUND: [f32; 4] = [0.08, 0.08, 0.1, 1.0];
 
@@ -44,23 +44,10 @@ pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), 
             let now = Instant::now();
             state.dmabuf.process_imports(|dmabuf| backend.renderer().import_dmabuf(dmabuf, None).is_ok());
             state.update_space(now);
-            // Unplugged (`wm msg screen-remove`), it shows only the background.
-            let overlay = overlay(state, screen, now);
-            let spaces = if state.connected.contains(&screen) { vec![&state.screens[&screen].space] } else { Vec::new() };
             {
                 let (renderer, mut framebuffer) = backend.bind().unwrap();
-                let result = smithay::desktop::space::render_output::<_, SolidColorRenderElement, _, _>(
-                    &output,
-                    renderer,
-                    &mut framebuffer,
-                    1.0,
-                    0,
-                    spaces,
-                    &overlay,
-                    &mut damage_tracker,
-                    BACKGROUND,
-                );
-                if let Err(err) = result {
+                let elements = state.screen_elements(renderer, screen, now);
+                if let Err(err) = damage_tracker.render_output(renderer, &mut framebuffer, 0, &elements, BACKGROUND) {
                     tracing::warn!("render failed: {err:?}");
                 }
             }
@@ -88,13 +75,6 @@ pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), 
         _ => {}
     })?;
     Ok(())
-}
-
-/// The pointers of the seats on the screen's workspace, and a mark in each
-/// seat's colour above the window it focuses there, in screen coordinates.
-pub(crate) fn overlay(state: &mut State, screen: ScreenId, now: Instant) -> Vec<SolidColorRenderElement> {
-    let Some((shown, viewer)) = state.shown_on(screen) else { return Vec::new() };
-    overlay_of(state, shown, viewer.unwrap_or(NOBODY), now)
 }
 
 /// The same for workspace `shown` as seat `viewer` sees it, on screen or not.

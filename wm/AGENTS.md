@@ -48,6 +48,15 @@ mise install                                   # Rust, pinned in mise.toml
   follows it in every seat's view, and gives focus back to it on close.
   Apps opened by other apps still tile; floating them too was option 2,
   left for now.
+- **Full screen** is a column's: its window takes the whole screen
+  (`Workspace::screen`, not the area the bar leaves) from the screen's
+  corner when a view has the column at its edge, and the column's room is
+  the screen less the gaps, so neighbours stay off screen. The seat that
+  asks has its view snapped there. While a seat's view is covered
+  (`Workspace::covered`), Top layer surfaces (the bar) are neither drawn
+  nor hit; Overlay ones still are. Every backend draws a screen through
+  `State::screen_elements` (shared with screenshots and capture), not the
+  `Space`, which would put Top layers over it.
 - **Clicks** focus without scrolling; keyboard and explicit moves reveal the
   window in that seat's view.
 - **Screens** have an incrementing `ScreenId`; make, model and serial (plus
@@ -128,7 +137,7 @@ grammar); `null` unbinds. Matching is exact on Ctrl/Alt/Shift/Super with the
 unshifted keysym. `Mod` is Super on DRM and Alt nested. New commands: `focus
 first|last`, `move-to-workspace N follow`, `reload` (seats and backend stay).
 Misu's own bindings file comes with step 6; what it binds that wm lacks
-(fullscreen, floating, column sizes, `jump`) is step 5.
+(floating, column sizes, `jump`) is step 5.
 
 Step 4: `wm msg seat N screenshot FILE` draws seat N's own view (its
 scroll position, its pointer and mark, its screen's layer surfaces) into an
@@ -152,8 +161,10 @@ tracker per session); a resize sends new constraints and fails the
 frame. The e2e run checks `grim -o` against seat 0's screenshot and
 `grim -T` on seat 1's unseen window. Screen sharing through the portal
 is unchecked: it needs the session's portal setup (step 6).
-Left of step 5: XWayland, popup grabs per seat, server-side decorations,
-full screen.
+Full screen (above): `wm msg fullscreen [on|off|toggle]`, `Mod+f`, and
+xdg `set_fullscreen` (before the window shows too); the e2e run covers
+the test bar and clicks through where it was.
+Left of step 5: XWayland, popup grabs per seat, server-side decorations.
 
 Known and left for now:
 
@@ -189,7 +200,7 @@ Misu's `AGENTS.md`) before the next.
 5. **Screencopy and portals** (`ext-image-copy-capture`, implemented;
    xdg-desktop-portal-wlr) for grim and screen sharing; **XWayland**;
    popup grabs per seat (`TODO` in `handlers.rs`); server-side decorations;
-   column widths and full screen.
+   full screen (implemented).
 6. **Port Misu**: the session entry (`misu-session`), the `misu-ai-*`
    scripts to `wm msg seat N …` (most of their workarounds go away), the
    pointer plugin to wm's own seat pointers, and a `wm` module in place of

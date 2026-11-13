@@ -9,9 +9,12 @@ use smithay::{
         dnd::{DnDGrab, DndGrabHandler, GrabType, Source},
         pointer::{CursorImageStatus, Focus},
     },
-    reexports::wayland_server::{
-        Client, Resource,
-        protocol::{wl_buffer, wl_seat, wl_surface::WlSurface},
+    reexports::{
+        wayland_protocols::xdg::shell::server::xdg_toplevel,
+        wayland_server::{
+            Client, Resource,
+            protocol::{wl_buffer, wl_output::WlOutput, wl_seat, wl_surface::WlSurface},
+        },
     },
     utils::{Rectangle, Serial},
     wayland::{
@@ -190,6 +193,17 @@ impl XdgShellHandler for State {
         self.unmapped.push(Window::new_wayland_window(surface));
     }
 
+    /// Full screen on the screen its column is on, whichever it names: a
+    /// window belongs to its workspace. Asked before it shows, it is
+    /// noted and done when it joins the layout (`add_window`).
+    fn fullscreen_request(&mut self, surface: ToplevelSurface, _output: Option<WlOutput>) {
+        self.fullscreen_request_for(&surface, true);
+    }
+
+    fn unfullscreen_request(&mut self, surface: ToplevelSurface) {
+        self.fullscreen_request_for(&surface, false);
+    }
+
     fn toplevel_destroyed(&mut self, surface: ToplevelSurface) {
         self.unmapped.retain(|w| w.toplevel().is_some_and(|t| t != &surface));
         if let Some(window) = self.window_for_surface(surface.wl_surface()) {
@@ -237,3 +251,22 @@ impl State {
 }
 
 smithay::delegate_dispatch2!(State);
+
+impl State {
+    fn fullscreen_request_for(&mut self, surface: &ToplevelSurface, on: bool) {
+        match self.window_for_surface(surface.wl_surface()) {
+            Some(window) => self.set_fullscreen(&window, Some(on), None),
+            None => surface.with_pending_state(|s| {
+                if on {
+                    s.states.set(xdg_toplevel::State::Fullscreen);
+                } else {
+                    s.states.unset(xdg_toplevel::State::Fullscreen);
+                }
+            }),
+        }
+        // A configure answers it, changed or not.
+        if surface.is_initial_configure_sent() {
+            surface.send_configure();
+        }
+    }
+}

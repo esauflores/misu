@@ -17,6 +17,7 @@ use std::time::{Duration, Instant};
 
 use smithay::{
     desktop::Window,
+    reexports::wayland_protocols::xdg::shell::server::xdg_toplevel,
     utils::{Logical, Point, Rectangle, Size},
 };
 
@@ -33,16 +34,23 @@ pub enum Direction {
 
 /// What the layout needs from a window.
 pub trait Tile: Clone + PartialEq {
-    /// Ask the window to take this size.
-    fn configure(&self, size: Size<i32, Logical>);
+    /// Ask the window to take this size, full screen or not.
+    fn configure(&self, size: Size<i32, Logical>, fullscreen: bool);
     /// The size it has: a floating window keeps its own.
     fn size(&self) -> Size<i32, Logical>;
 }
 
 impl Tile for Window {
-    fn configure(&self, size: Size<i32, Logical>) {
+    fn configure(&self, size: Size<i32, Logical>, fullscreen: bool) {
         if let Some(toplevel) = self.toplevel() {
-            toplevel.with_pending_state(|s| s.size = Some(size));
+            toplevel.with_pending_state(|s| {
+                s.size = Some(size);
+                if fullscreen {
+                    s.states.set(xdg_toplevel::State::Fullscreen);
+                } else {
+                    s.states.unset(xdg_toplevel::State::Fullscreen);
+                }
+            });
             // Before its first commit the window gets this size with its
             // initial configure (see `commit` in handlers.rs).
             if toplevel.is_initial_configure_sent() {
@@ -59,6 +67,9 @@ impl Tile for Window {
 struct Column<W> {
     window: W,
     width: f64,
+    /// It covers the whole screen, bar and gaps too, when a view has it
+    /// at the screen's left edge.
+    fullscreen: bool,
     x: Anim,
 }
 
@@ -74,6 +85,8 @@ pub struct Workspace<W: Tile = Window> {
     /// The part of its screen it is laid out in: all of it but what layer
     /// surfaces (a bar) keep for themselves, in the screen's coordinates.
     area: Rectangle<i32, Logical>,
+    /// The whole screen's size, for full-screen windows.
+    screen: Size<i32, Logical>,
     columns: Vec<Column<W>>,
     /// Over the columns, the last on top; a parent before its children.
     floats: Vec<Float<W>>,
@@ -83,7 +96,7 @@ pub struct Workspace<W: Tile = Window> {
 
 impl<W: Tile> Workspace<W> {
     pub fn new(size: Size<i32, Logical>) -> Self {
-        Self { area: Rectangle::from_size(size), columns: Vec::new(), floats: Vec::new(), views: Vec::new() }
+        Self { area: Rectangle::from_size(size), screen: size, columns: Vec::new(), floats: Vec::new(), views: Vec::new() }
     }
 
     pub fn size(&self) -> Size<i32, Logical> {
@@ -96,13 +109,14 @@ impl<W: Tile> Workspace<W> {
 
     /// Lay out again for a whole screen of this size.
     pub fn resize(&mut self, size: Size<i32, Logical>, now: Instant, animate: bool) {
-        self.set_area(Rectangle::from_size(size), now, animate);
+        self.set_area(Rectangle::from_size(size), size, now, animate);
     }
 
-    /// Lay out again in `area` of the screen.
-    pub fn set_area(&mut self, area: Rectangle<i32, Logical>, now: Instant, animate: bool) {
-        if area != self.area {
+    /// Lay out again in `area` of a screen of size `screen`.
+    pub fn set_area(&mut self, area: Rectangle<i32, Logical>, screen: Size<i32, Logical>, now: Instant, animate: bool) {
+        if area != self.area || screen != self.screen {
             self.area = area;
+            self.screen = screen;
             self.arrange(now, animate);
         }
     }
@@ -122,6 +136,31 @@ impl<W: Tile> Workspace<W> {
 
     pub fn is_floating(&self, window: &W) -> bool {
         self.floats.iter().any(|f| &f.window == window)
+    }
+
+    pub fn is_fullscreen(&self, window: &W) -> bool {
+        self.columns.iter().any(|c| &c.window == window && c.fullscreen)
+    }
+
+    /// Make `window`'s column full screen or not (`None`: the other way);
+    /// whether that changed anything. Floating windows stay as they are.
+    pub fn set_fullscreen(&mut self, window: &W, on: Option<bool>, now: Instant, animate: bool) -> bool {
+        let Some(index) = self.index_of(window) else { return false };
+        let column = &mut self.columns[index];
+        let on = on.unwrap_or(!column.fullscreen);
+        if column.fullscreen == on {
+            return false;
+        }
+        column.fullscreen = on;
+        self.arrange(now, animate);
+        true
+    }
+
+    /// Whether `seat`'s view at `now` has a full-screen window covering the
+    /// screen: what layer surfaces over windows (a bar) give way to.
+    pub fn covered(&self, seat: usize, now: Instant) -> bool {
+        let view = self.view(seat, now);
+        self.columns.iter().any(|c| c.fullscreen && (c.x.value(now) - GAP as f64 - view).round() == 0.0)
     }
 
     fn index_of(&self, window: &W) -> Option<usize> {
@@ -173,7 +212,7 @@ impl<W: Tile> Workspace<W> {
         let index = after.and_then(|w| self.index_of(w)).map_or(self.columns.len(), |i| i + 1);
         // It appears in its place; the columns after it slide over.
         let x = self.column_x(index);
-        self.columns.insert(index, Column { window, width: DEFAULT_WIDTH, x: Anim::new(x) });
+        self.columns.insert(index, Column { window, width: DEFAULT_WIDTH, fullscreen: false, x: Anim::new(x) });
         self.arrange(now, animate);
     }
 
@@ -233,7 +272,10 @@ impl<W: Tile> Workspace<W> {
         let x = self.columns[index].x.target();
         let (w, gap, screen) = (self.column_width(index) as f64, GAP as f64, self.area.size.w as f64);
         let view = self.view_target(seat);
-        let target = if x - gap < view {
+        let target = if self.columns[index].fullscreen {
+            // Exactly at the screen's edge, to cover it.
+            x - gap
+        } else if x - gap < view {
             x - gap
         } else if x + w + gap > view + screen {
             x + w + gap - screen
@@ -245,12 +287,12 @@ impl<W: Tile> Workspace<W> {
 
     /// Lay the columns out again and tell the windows their sizes.
     fn arrange(&mut self, now: Instant, animate: bool) {
-        let height = (self.area.size.h - 2 * GAP).max(1);
         for index in 0..self.columns.len() {
-            let (x, width) = (self.column_x(index), self.column_width(index));
+            let x = self.column_x(index);
+            let size = self.window_size(index);
             let column = &mut self.columns[index];
             column.x.set(x, now, animate);
-            column.window.configure((width, height).into());
+            column.window.configure(size, column.fullscreen);
         }
         // Don't leave a view past the last column.
         let end = (self.column_x(self.columns.len()) - self.area.size.w as f64).max(0.0);
@@ -288,15 +330,17 @@ impl<W: Tile> Workspace<W> {
 
     /// Every window's rectangle, columns at `x` along the screen.
     fn place(&self, x: impl Fn(&Column<W>) -> f64) -> Vec<(&W, Rectangle<i32, Logical>)> {
-        let height = (self.area.size.h - 2 * GAP).max(1);
         let origin = self.area.loc;
         let mut placed: Vec<(&W, Rectangle<i32, Logical>)> = self
             .columns
             .iter()
             .enumerate()
             .map(|(i, c)| {
-                let loc = origin + Point::from((x(c).round() as i32, GAP));
-                (&c.window, Rectangle::new(loc, (self.column_width(i), height).into()))
+                let x = x(c).round() as i32;
+                // Full screen: from the screen's corner, whatever the bar
+                // keeps, so a view with it at the edge has it all.
+                let loc = if c.fullscreen { Point::from((x - GAP, 0)) } else { origin + Point::from((x, GAP)) };
+                (&c.window, Rectangle::new(loc, self.window_size(i)))
             })
             .collect();
         for float in &self.floats {
@@ -316,9 +360,23 @@ impl<W: Tile> Workspace<W> {
 
     /// `fraction` of the screen, less its share of the gaps: 1/fraction
     /// columns and the gaps around them fill the screen exactly.
+    /// A full-screen column's room is the whole screen less the gaps
+    /// columns keep around them, so its window, from one gap before it to
+    /// one after, ends where the next column's room starts.
     fn column_width(&self, index: usize) -> i32 {
+        if self.columns.get(index).is_some_and(|c| c.fullscreen) {
+            return (self.screen.w - 2 * GAP).max(1);
+        }
         let fraction = self.columns.get(index).map_or(DEFAULT_WIDTH, |c| c.width);
         ((self.area.size.w as f64 * fraction - GAP as f64 * (1.0 + fraction)) as i32).max(1)
+    }
+
+    /// The size column `index`'s window gets.
+    fn window_size(&self, index: usize) -> Size<i32, Logical> {
+        if self.columns[index].fullscreen {
+            return (self.screen.w.max(1), self.screen.h.max(1)).into();
+        }
+        (self.column_width(index), (self.area.size.h - 2 * GAP).max(1)).into()
     }
 
     fn column_x(&self, index: usize) -> f64 {
