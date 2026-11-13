@@ -131,6 +131,8 @@ pub struct State {
     /// Kept alive for its wl_output and xdg-output globals.
     pub _output_manager_state: OutputManagerState,
     pub data_device_state: DataDeviceState,
+    /// Idle notify, per seat (see `idle.rs`).
+    pub idle: smithay::wayland::idle_notify::IdleNotifierState<Self>,
     /// Primary selection and data control (see `clipboard.rs`).
     pub clipboard: crate::clipboard::Clipboard,
     pub popups: PopupManager,
@@ -172,6 +174,7 @@ impl State {
             _output_manager_state: OutputManagerState::new_with_xdg_output::<Self>(&dh),
             data_device_state: DataDeviceState::new::<Self>(&dh),
             clipboard: crate::clipboard::Clipboard::new(&dh),
+            idle: smithay::wayland::idle_notify::IdleNotifierState::new(&dh, event_loop.handle()),
             popups: PopupManager::default(),
             display_handle: dh.clone(),
             config,

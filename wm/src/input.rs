@@ -89,6 +89,7 @@ impl State {
                 self.pointer_button(seat, event.button_code(), event.state(), Event::time(&event));
             }
             InputEvent::PointerAxis { event, .. } => {
+                self.seat_active(seat);
                 let mut frame = AxisFrame::new(Event::time(&event)).source(event.source());
                 for axis in [Axis::Horizontal, Axis::Vertical] {
                     let discrete = event.amount_v120(axis);
@@ -113,6 +114,7 @@ impl State {
 
     /// Returns a requested VT switch for the DRM backend to execute.
     pub fn keyboard_input(&mut self, seat: usize, source: KeyboardSource, keycode: Keycode, key_state: KeyState, time: InputTime) -> Option<i32> {
+        self.seat_active(seat);
         let backend = self.config.backend;
         let keyboard = self.seats[seat].seat.get_keyboard().unwrap();
         let action = keyboard.input_from_source(source, self, keycode, key_state, SERIAL_COUNTER.next_serial(), time, |state, mods, handle| {
@@ -154,6 +156,7 @@ impl State {
     /// keyboard, without scrolling. Not while a menu or a layer surface
     /// (fuzzel) holds it.
     pub fn pointer_moved(&mut self, seat: usize, pos: Point<f64, Logical>, time: InputTime) {
+        self.seat_active(seat);
         self.pointer_motion(seat, pos, time);
         let data = &self.seats[seat];
         if !self.config.input.focus_follows_mouse
@@ -191,6 +194,7 @@ impl State {
     }
 
     pub fn pointer_button(&mut self, seat: usize, button: u32, state: ButtonState, time: InputTime) {
+        self.seat_active(seat);
         if state == ButtonState::Pressed {
             self.refresh_pointer(seat, time);
         }

@@ -100,6 +100,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/settings.rs` | `input`: xkb, repeat, libinput options, focus follows mouse |
 | `src/screens.rs` | `screens`: modes, order, off, laptop panels |
 | `src/clipboard.rs` | primary selection, wlr/ext data control |
+| `src/idle.rs` | ext-idle-notify, per seat |
 | `src/lock.rs` | ext-session-lock: lock surfaces, input and drawing while locked |
 | `src/xwayland.rs` | xwayland-satellite: display, `DISPLAY`, restarts |
 | `src/winit.rs` | nested backend and rendering |
@@ -248,7 +249,11 @@ by Misu's install.sh):
   `focus_changed` sets the primary focus with the data device's. History
   stays out of wm (cliphist from the session's `startup`). The e2e run
   copies and pastes per seat with wl-clipboard.
-- Next: idle notify,
+- Idle notify (done): `idle.rs`; `seat_active` on every keyboard,
+  motion, button and axis input (devices and `wm msg`), per seat. The e2e
+  run starts swayidle on each seat and checks seat 0 idles while seat 1
+  moves, then resumes. No idle inhibit yet (Misu never idles out).
+- Next:
   xdg-activation, layout commands (float toggle, width presets, focus
   previous, overview, jump), agent-seat commands (keys, typing, scroll,
   right click, focus a window), config includes. Later: gamma

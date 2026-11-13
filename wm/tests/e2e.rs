@@ -517,6 +517,7 @@ fn nested_in_headless_scroll() {
     menu_grabs(&wm, &dir);
     x11_apps(&wm, &dir);
     clipboards(&wm, &runtime);
+    idle_per_seat(&wm, &dir, &runtime);
     session_lock(&wm, &dir, &runtime);
 
     // Errors come back as errors.
@@ -1008,3 +1009,45 @@ fn clipboards(wm: &Wm, runtime: &Path) {
     assert!(!ok || text.is_empty(), "seat 1 selected nothing: {text:?}");
 }
 
+/// swayidle runs on wm, once per seat: seat 0 goes idle while seat 1 keeps
+/// working, and comes back with its own input.
+fn idle_per_seat(wm: &Wm, dir: &Path, runtime: &Path) {
+    if !on_path("swayidle") {
+        eprintln!("idle skipped: needs swayidle");
+        return;
+    }
+    let display = wm.sock.file_name().unwrap().to_string_lossy();
+    let display = display.strip_prefix("wm.").unwrap().strip_suffix(".sock").unwrap().to_string();
+    let tree = wm.tree();
+    let file = |name: &str| dir.join(name);
+    let swayidle = |s: usize| {
+        let name = seat(&tree, s)["name"].as_str().unwrap().to_string();
+        let (idle, back) = (file(&format!("idle{s}")), file(&format!("back{s}")));
+        let child = Command::new("swayidle")
+            .args(["-S", &name, "timeout", "1"])
+            .arg(format!("touch {}", idle.display()))
+            .arg("resume")
+            .arg(format!("touch {}", back.display()))
+            .env("XDG_RUNTIME_DIR", runtime)
+            .env("WAYLAND_DISPLAY", &display)
+            .stderr(fs::File::create(file(&format!("swayidle{s}.log"))).unwrap())
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        Group(child)
+    };
+    let (mut idle0, _idle1) = (swayidle(0), swayidle(1));
+    // Seat 1 keeps moving; seat 0 does nothing.
+    let start = Instant::now();
+    let mut x = 10.0;
+    while start.elapsed() < Duration::from_millis(2500) {
+        wm.msg(&format!("seat 1 pointer {x} 10"));
+        x = if x == 10.0 { 20.0 } else { 10.0 };
+        sleep(Duration::from_millis(200));
+    }
+    assert!(idle0.0.try_wait().unwrap().is_none(), "swayidle runs on wm: {}", fs::read_to_string(file("swayidle0.log")).unwrap());
+    assert!(file("idle0").exists(), "seat 0 went idle");
+    assert!(!file("idle1").exists(), "seat 1 stayed active");
+    wm.msg("seat 0 pointer 30 30");
+    wait_for("seat 0 back from idle", || file("back0").exists().then_some(()));
+}

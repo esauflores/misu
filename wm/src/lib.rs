@@ -10,6 +10,7 @@ pub mod cursor;
 pub mod decorations;
 pub mod dmabuf;
 pub mod handlers;
+pub mod idle;
 pub mod input;
 pub mod ipc;
 pub mod layers;

@@ -98,6 +98,10 @@ middle-click). Clipboard tools reach them without a window, through data
 control (wlr and ext): `wl-paste --watch cliphist store` keeps the first
 seat's history; `--seat seat1` picks another.
 
+Idle daemons (swayidle) get each seat's idle time (`ext-idle-notify`):
+input on an agent's seat doesn't keep yours awake. swayidle's
+`before-sleep` comes from logind, and the session lock does the locking.
+
 Each seat on the shown workspace has its pointer drawn with a real cursor:
 the app's (its own surface, or a shape it names), else the theme's arrow,
 from `XCURSOR_THEME` and `XCURSOR_SIZE`. Seat 0 has the theme as it is;
