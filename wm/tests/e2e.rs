@@ -2,7 +2,9 @@
 //! with kitty windows, driven and checked through the control socket.
 //!
 //! Needs `scroll` and `kitty` on PATH (skipped otherwise) and a GPU. Leaves a
-//! screenshot in target/tmp/e2e/screen.png when `grim` is there.
+//! screenshot in target/tmp/e2e/screen.png (and layers.png, with a bar and
+//! fuzzel) when `grim` is there. The layer-shell step needs `quickshell`,
+//! and `fuzzel` for its keyboard part.
 
 use std::{
     fs,
@@ -205,6 +207,16 @@ fn nested_in_headless_scroll() {
     fs::set_permissions(&runtime, fs::Permissions::from_mode(0o700)).unwrap();
 
     let (_host, host_display) = start_host(&dir, &runtime);
+    // A screenshot from the host, for a look.
+    let shot = |name: &str| {
+        if on_path("grim") {
+            let _ = Command::new("grim")
+                .arg(dir.join(name))
+                .env("XDG_RUNTIME_DIR", &runtime)
+                .env("WAYLAND_DISPLAY", &host_display)
+                .status();
+        }
+    };
     // As if wm were started inside another: that one's socket is in
     // $WM_SOCK, and stays its own.
     let outer = dir.join("outer.sock");
@@ -261,6 +273,8 @@ fn nested_in_headless_scroll() {
     assert!(x >= 0 && x + third["width"].as_i64().unwrap() <= out_w, "the newest is in view: {third}");
     assert!(view(&tree, 0) > 0.0);
 
+    layer_shell(&wm, &dir, ids[2], &shot);
+
     // Seat 1 launches one, through a launcher that forks it off: it still
     // opens on seat 1's workspace, off screen, and nothing changes for seat 0.
     let theirs = launch(&wm, 1, "setsid -f kitty --config NONE");
@@ -314,14 +328,7 @@ fn nested_in_headless_scroll() {
     assert_eq!(seat(&wm.tree(), 0)["animating"], true);
     wait_for("the animation to end", || (seat(&wm.tree(), 0)["animating"] == false).then_some(()));
 
-    // Screenshot from the host, for a look.
-    if on_path("grim") {
-        let _ = Command::new("grim")
-            .arg(dir.join("screen.png"))
-            .env("XDG_RUNTIME_DIR", &runtime)
-            .env("WAYLAND_DISPLAY", &host_display)
-            .status();
-    }
+    shot("screen.png");
 
     // Workspaces: seat 0 sends its window away; both seats on it move on.
     wm.msg("seat 0 focus left");
@@ -465,4 +472,94 @@ fn nested_in_headless_scroll() {
     let log = fs::read_to_string(dir.join("wm.log")).unwrap();
     assert!(log.contains("dmabuf import accepted"), "kitty's dmabufs were imported");
     assert!(!log.contains("dmabuf import rejected"), "no dmabuf was rejected");
+}
+
+/// Run `command` as seat `s`, its pid written to `dir/<name>.pid`.
+fn spawn_tracked(wm: &Wm, s: usize, dir: &Path, name: &str, command: &str) -> PathBuf {
+    let pid = dir.join(format!("{name}.pid"));
+    let _ = fs::remove_file(&pid);
+    wm.msg(&format!("seat {s} spawn echo $$ > {}; exec {command}", pid.display()));
+    pid
+}
+
+fn kill(pid: &Path) {
+    let pid = wait_for("a pid file", || fs::read_to_string(pid).ok().filter(|p| !p.trim().is_empty()));
+    let _ = Command::new("kill").arg(pid.trim()).status();
+}
+
+/// A Quickshell bar keeps its room from the windows, and fuzzel takes the
+/// keyboard of the seat that launched it, giving it back when it goes.
+fn layer_shell(wm: &Wm, dir: &Path, focused: u64, shot: &dyn Fn(&str)) {
+    if !on_path("quickshell") {
+        eprintln!("layer shell: skipped, needs quickshell");
+        return;
+    }
+    let qml = dir.join("bar.qml");
+    fs::write(
+        &qml,
+        r#"import Quickshell
+import Quickshell.Wayland
+import QtQuick
+ShellRoot {
+    PanelWindow {
+        anchors { top: true; left: true; right: true }
+        implicitHeight: 30
+        color: "steelblue"
+        WlrLayershell.namespace: "e2e-bar"
+    }
+}
+"#,
+    )
+    .unwrap();
+    let full = wm.tree()["screens"][0]["area"].clone();
+    let bar = spawn_tracked(wm, 0, dir, "bar", &format!("quickshell -p {}", qml.display()));
+    // Its room is kept once it asks; its size shows with its first frame.
+    let tree = wait_for("the bar, drawn, and its room", || {
+        let tree = wm.tree();
+        let screen = &tree["screens"][0];
+        (screen["area"]["y"] == 30 && screen["layers"][0]["height"] == 30).then_some(tree)
+    });
+    let screen = &tree["screens"][0];
+    assert_eq!(screen["layers"][0]["namespace"], "e2e-bar");
+    assert_eq!(screen["layers"][0]["layer"], "top");
+    assert_eq!(screen["layers"][0]["height"], 30);
+    assert_eq!(screen["area"]["height"], full["height"].as_i64().unwrap() - 30);
+    for window in windows(&tree, 1) {
+        assert!(window["y"].as_i64().unwrap() > 30, "below the bar: {window}");
+    }
+    // The bar wants no keyboard: a click on it leaves the focus be.
+    wm.msg("seat 0 click 5 5");
+    let tree = wm.tree();
+    assert_eq!(focus(&tree, 0), Some(focused));
+    assert_eq!(seat(&tree, 0)["layer_focus"], Value::Null);
+
+    if on_path("fuzzel") {
+        // dmenu mode with nothing to pick: a stray click can't start an app.
+        let launcher = spawn_tracked(wm, 0, dir, "fuzzel", "fuzzel --dmenu < /dev/null");
+        wait_for("fuzzel to take seat 0's keyboard", || {
+            (seat(&wm.tree(), 0)["layer_focus"] == "launcher").then_some(())
+        });
+        assert_eq!(seat(&wm.tree(), 1)["layer_focus"], Value::Null, "not seat 1's");
+        // A click on a window (near its top, clear of fuzzel in the middle)
+        // focuses it but leaves fuzzel the keyboard.
+        let tree = wm.tree();
+        let (cx, _) = centre(&tree, 0, &windows(&tree, 1)[1]);
+        let top = windows(&tree, 1)[1]["y"].as_i64().unwrap() + 20;
+        wm.msg(&format!("seat 0 click {cx} {top}"));
+        let tree = wm.tree();
+        assert_eq!(seat(&tree, 0)["pointer"]["over"], windows(&tree, 1)[1]["id"], "the click was on the window");
+        assert_eq!(seat(&tree, 0)["layer_focus"], "launcher");
+        wm.msg("seat 0 focus right");
+        shot("layers.png");
+        kill(&launcher);
+        wait_for("the keyboard back on the window", || {
+            (seat(&wm.tree(), 0)["layer_focus"] == Value::Null).then_some(())
+        });
+        assert_eq!(focus(&wm.tree(), 0), Some(focused));
+    } else {
+        eprintln!("layer shell: fuzzel skipped, not on PATH");
+    }
+
+    kill(&bar);
+    wait_for("the bar's room back", || (wm.tree()["screens"][0]["area"] == full).then_some(()));
 }

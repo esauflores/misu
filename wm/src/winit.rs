@@ -74,6 +74,7 @@ pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), 
             for window in state.live_windows() {
                 window.send_frame(&output, elapsed, Some(Duration::ZERO), |_, _| Some(output.clone()));
             }
+            state.layers_frame(elapsed, Some(Duration::ZERO));
             for screen in state.screens.values_mut() {
                 screen.space.refresh();
             }

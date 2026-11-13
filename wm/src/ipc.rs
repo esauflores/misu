@@ -40,7 +40,7 @@ use std::{
 use serde_json::{Value, json};
 use smithay::{
     backend::input::{ButtonState, InputTime},
-    desktop::Window,
+    desktop::{Window, layer_map_for_output},
     reexports::{
         calloop::{EventLoop, Interest, Mode, PostAction, generic::Generic},
         wayland_protocols::xdg::shell::server::xdg_toplevel::State::Activated,
@@ -366,10 +366,24 @@ impl State {
         let screens: Vec<Value> = screens
             .into_iter()
             .map(|s| {
-                let (size, p) = (s.size(), s.output.physical_properties());
+                let (size, p, area) = (s.size(), s.output.physical_properties(), s.area());
+                let map = layer_map_for_output(&s.output);
+                let layers: Vec<Value> = map
+                    .layers()
+                    .map(|l| {
+                        let r = map.layer_geometry(l).unwrap_or_default();
+                        json!({
+                            "namespace": l.namespace(), "layer": format!("{:?}", l.layer()).to_lowercase(),
+                            "x": r.loc.x, "y": r.loc.y, "width": r.size.w, "height": r.size.h,
+                        })
+                    })
+                    .collect();
                 let more = json!({
                     "make": p.make, "model": p.model, "serial": p.serial_number,
                     "width": size.w, "height": size.h,
+                    // What its workspaces get: all but what layers keep.
+                    "area": { "x": area.loc.x, "y": area.loc.y, "width": area.size.w, "height": area.size.h },
+                    "layers": layers,
                     // What is drawn on it.
                     "windows": s.space.elements_for_output(&s.output).map(window_id).collect::<Vec<_>>(),
                 });
@@ -419,6 +433,8 @@ impl State {
                     "index": i, "workspace_number": self.number(s.workspace),
                     "view": ws.view_target(i), "animating": ws.is_animating(i, now),
                     "pointer": { "x": p.x, "y": p.y, "over": over },
+                    // The layer surface with its keyboard, by namespace.
+                    "layer_focus": s.layer_focus.as_ref().map(|l| l.namespace().to_owned()),
                 });
                 with(self.seat_json(i), more)
             })

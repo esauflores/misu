@@ -34,7 +34,7 @@ use std::{
 
 use smithay::{
     backend::renderer::{element::solid::SolidColorBuffer, utils::with_renderer_surface_state},
-    desktop::{PopupManager, Space, Window, WindowSurfaceType, space::SpaceElement},
+    desktop::{LayerSurface, PopupManager, Space, Window, WindowSurfaceType, layer_map_for_output, space::SpaceElement},
     input::{Seat, SeatState, keyboard::Keycode},
     output::{Mode as OutputMode, Output, PhysicalProperties, Subpixel},
     reexports::{
@@ -43,12 +43,15 @@ use smithay::{
             Display, DisplayHandle, Resource, backend::ClientData, protocol::wl_surface::WlSurface,
         },
     },
-    utils::{Logical, Physical, Point, SERIAL_COUNTER, Size},
+    utils::{Logical, Physical, Point, Rectangle, SERIAL_COUNTER, Size},
     wayland::{
         compositor::{CompositorClientState, CompositorState, with_states},
         output::OutputManagerState,
         selection::data_device::DataDeviceState,
-        shell::xdg::{XdgShellState, XdgToplevelSurfaceData},
+        shell::{
+            wlr_layer::{Layer, WlrLayerShellState},
+            xdg::{XdgShellState, XdgToplevelSurfaceData},
+        },
         shm::ShmState,
         socket::ListeningSocketSource,
     },
@@ -93,6 +96,7 @@ pub struct State {
 
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
+    pub layer_shell_state: WlrLayerShellState,
     pub shm_state: ShmState,
     /// Kept alive for its wl_output and xdg-output globals.
     pub _output_manager_state: OutputManagerState,
@@ -119,6 +123,7 @@ impl State {
             events: Events::default(),
             compositor_state: CompositorState::new::<Self>(&dh),
             xdg_shell_state: XdgShellState::new::<Self>(&dh),
+            layer_shell_state: WlrLayerShellState::new::<Self>(&dh),
             shm_state: ShmState::new::<Self>(&dh, vec![]),
             _output_manager_state: OutputManagerState::new_with_xdg_output::<Self>(&dh),
             data_device_state: DataDeviceState::new::<Self>(&dh),
@@ -129,7 +134,7 @@ impl State {
         // Each seat starts on a workspace of its own, which the first screen
         // to appear takes.
         for _ in 0..state.config.seats.max(1) {
-            let ws = state.new_workspace(FALLBACK_SIZE.into());
+            let ws = state.new_workspace(Rectangle::from_size(FALLBACK_SIZE.into()));
             state.seats.add(&dh, ws);
         }
         state
@@ -158,10 +163,12 @@ impl State {
 
     // Screens and workspaces
 
-    fn new_workspace(&mut self, size: Size<i32, Logical>) -> WorkspaceId {
+    fn new_workspace(&mut self, area: Rectangle<i32, Logical>) -> WorkspaceId {
         let id = WorkspaceId(self.next_workspace);
         self.next_workspace += 1;
-        self.workspaces.insert(id, Workspace::new(size));
+        let mut ws = Workspace::new(area.size);
+        ws.set_area(area, Instant::now(), false);
+        self.workspaces.insert(id, ws);
         id
     }
 
@@ -193,7 +200,7 @@ impl State {
                     self.detach_workspace(ws);
                     ws
                 }
-                None => self.new_workspace(FALLBACK_SIZE.into()),
+                None => self.new_workspace(Rectangle::from_size(FALLBACK_SIZE.into())),
             };
             workspaces.push(ws);
         }
@@ -248,13 +255,14 @@ impl State {
         }
     }
 
-    /// Lay out a screen's workspaces for its size (it appeared or resized).
+    /// Lay out a screen's workspaces in its area (it appeared or resized,
+    /// or a bar took or gave back room).
     pub fn resize_screen(&mut self, id: ScreenId) {
         let now = Instant::now();
-        let size = self.screen_size(id);
+        let area = self.screen_area(id);
         for ws in self.screens[&id].workspaces.clone() {
             let animate = self.animates_workspace(ws);
-            self.ws(ws).resize(size, now, animate);
+            self.ws(ws).set_area(area, now, animate);
         }
     }
 
@@ -263,7 +271,7 @@ impl State {
     }
 
     /// The screen `seat` is on, or the leftmost while its workspace has none.
-    fn screen_for(&self, seat: usize) -> Option<ScreenId> {
+    pub(crate) fn screen_for(&self, seat: usize) -> Option<ScreenId> {
         self.screen_of(self.seats[seat].workspace).or_else(|| self.connected.first().copied())
     }
 
@@ -271,11 +279,16 @@ impl State {
         self.screens.get(&id).map_or(FALLBACK_SIZE.into(), Screen::size)
     }
 
+    /// What of a screen its workspaces get (see `Screen::area`).
+    pub fn screen_area(&self, id: ScreenId) -> Rectangle<i32, Logical> {
+        self.screens.get(&id).map_or(Rectangle::from_size(FALLBACK_SIZE.into()), Screen::area)
+    }
+
     /// The `index`th workspace (from 0) of `seat`'s screen, made if missing.
     pub fn nth_workspace(&mut self, seat: usize, index: usize) -> Option<WorkspaceId> {
         let screen = self.screen_for(seat)?;
         while self.screens[&screen].workspaces.len() <= index {
-            let ws = self.new_workspace(self.screen_size(screen));
+            let ws = self.new_workspace(self.screen_area(screen));
             self.screens.get_mut(&screen).unwrap().workspaces.push(ws);
         }
         Some(self.screens[&screen].workspaces[index])
@@ -284,8 +297,8 @@ impl State {
     /// Take `ws` off its screen, leaving a fresh one there if it was the last.
     fn detach_workspace(&mut self, ws: WorkspaceId) {
         let Some(from) = self.screen_of(ws) else { return };
-        let size = self.screen_size(from);
-        let leftover = (self.screens[&from].workspaces.len() == 1).then(|| self.new_workspace(size));
+        let area = self.screen_area(from);
+        let leftover = (self.screens[&from].workspaces.len() == 1).then(|| self.new_workspace(area));
         let screen = self.screens.get_mut(&from).unwrap();
         screen.workspaces.retain(|&w| w != ws);
         screen.workspaces.extend(leftover);
@@ -344,12 +357,18 @@ impl State {
 
     /// The surface under `pos` in `seat`'s view of its own workspace, which
     /// may not be on screen.
+    /// Layer surfaces of its screen are over and under the windows.
     pub fn surface_under(&self, seat: usize, pos: Point<f64, Logical>) -> Option<(WlSurface, Point<f64, Logical>)> {
-        self.window_under(seat, pos).and_then(|(window, render_loc)| {
-            window
-                .surface_under(pos - render_loc.to_f64(), WindowSurfaceType::ALL)
-                .map(|(s, p)| (s, (p + render_loc).to_f64()))
-        })
+        let layer = |layers: &[Layer]| self.layer_under(seat, layers, pos).map(|(_, s, p)| (s, p));
+        layer(&[Layer::Overlay, Layer::Top])
+            .or_else(|| {
+                self.window_under(seat, pos).and_then(|(window, render_loc)| {
+                    window
+                        .surface_under(pos - render_loc.to_f64(), WindowSurfaceType::ALL)
+                        .map(|(s, p)| (s, (p + render_loc).to_f64()))
+                })
+            })
+            .or_else(|| layer(&[Layer::Bottom, Layer::Background]))
     }
 
     /// The window under `pos` for `seat` (its popups too), and where it is
@@ -376,7 +395,7 @@ impl State {
     }
 
     /// The seat in the environment of `surface`'s client (see `LAUNCH_ENV`).
-    fn launcher_of(&self, surface: &WlSurface) -> Option<usize> {
+    pub(crate) fn launcher_of(&self, surface: &WlSurface) -> Option<usize> {
         let pid = surface.client()?.get_credentials(&self.display_handle).ok()?.pid;
         let environ = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
         let prefix = format!("{LAUNCH_ENV}=");
@@ -422,12 +441,22 @@ impl State {
             let animate = self.animates(seat);
             self.ws(ws).reveal(seat, w, now, animate);
         }
-        let data = &mut self.seats[seat];
-        data.focus = window.clone();
-        let keyboard = data.seat.get_keyboard().unwrap();
-        let surface = window.as_ref().and_then(|w| w.toplevel()).map(|t| t.wl_surface().clone());
-        keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
+        self.seats[seat].focus = window;
+        self.update_keyboard(seat);
         self.update_activation();
+    }
+
+    /// Give `seat`'s keyboard to its layer surface, else its window.
+    pub fn update_keyboard(&mut self, seat: usize) {
+        let data = &self.seats[seat];
+        let surface = match &data.layer_focus {
+            Some(layer) => Some(layer.wl_surface().clone()),
+            None => data.focus.as_ref().and_then(|w| w.toplevel()).map(|t| t.wl_surface().clone()),
+        };
+        let keyboard = data.seat.get_keyboard().unwrap();
+        if keyboard.current_focus() != surface {
+            keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
+        }
     }
 
     /// A window is shown active while any seat has it focused.
@@ -493,8 +522,8 @@ impl State {
         if self.screen_of(ws) != Some(to) {
             self.detach_workspace(ws);
             self.screens.get_mut(&to).unwrap().workspaces.push(ws);
-            let (size, animate) = (self.screen_size(to), self.animates_workspace(ws));
-            self.ws(ws).resize(size, Instant::now(), animate);
+            let (area, animate) = (self.screen_area(to), self.animates_workspace(ws));
+            self.ws(ws).set_area(area, Instant::now(), animate);
         }
         self.go_to(seat, ws);
         Ok(())
@@ -647,6 +676,8 @@ pub struct SeatData {
     /// The workspace it is on.
     pub workspace: WorkspaceId,
     pub focus: Option<Window>,
+    /// A layer surface with its keyboard instead of `focus` (fuzzel, say).
+    pub layer_focus: Option<LayerSurface>,
     /// Its own setting; see `State::animates`.
     pub animate: bool,
     pub cursor: SolidColorBuffer,
@@ -674,6 +705,7 @@ impl Seats {
             intercepted_keys: HashSet::new(),
             workspace,
             focus: None,
+            layer_focus: None,
             animate: true,
             cursor: SolidColorBuffer::new((CURSOR_SIZE, CURSOR_SIZE), color),
             mark: SolidColorBuffer::new((1, MARK_HEIGHT), color),
@@ -763,6 +795,15 @@ impl Screen {
         self.space.unmap_output(&self.output);
         self.space.map_output(&output, (0, 0));
         self.output = output;
+    }
+
+    /// The part its workspaces get: all of it but what layer surfaces (a
+    /// bar) keep for themselves.
+    pub fn area(&self) -> Rectangle<i32, Logical> {
+        let mut map = layer_map_for_output(&self.output);
+        map.arrange();
+        let zone = map.non_exclusive_zone();
+        if zone.size.w > 0 && zone.size.h > 0 { zone } else { Rectangle::from_size(self.size()) }
     }
 
     /// Its size in logical pixels, from the monitor's mode, scale and

@@ -6,6 +6,7 @@ pub mod dmabuf;
 pub mod handlers;
 pub mod input;
 pub mod ipc;
+pub mod layers;
 pub mod layout;
 pub mod state;
 pub mod udev;

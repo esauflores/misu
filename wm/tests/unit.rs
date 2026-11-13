@@ -7,7 +7,7 @@ mod layout {
         time::{Duration, Instant},
     };
 
-    use smithay::utils::{Logical, Size};
+    use smithay::utils::{Logical, Rectangle, Size};
     use wm::layout::{DEFAULT_WIDTH, DURATION, Direction, GAP, Tile, Workspace};
 
     /// A window that remembers the size it was asked to take.
@@ -235,6 +235,22 @@ mod layout {
         let end = (GAP + 3 * (w + GAP) - 600) as f64;
         assert!(end < view_showing_third());
         assert_eq!(ws.view_target(ME), end);
+    }
+
+    #[test]
+    fn a_bar_takes_room_from_the_area() {
+        let now = Instant::now();
+        let (mut ws, windows) = workspace(2, now);
+        // A 30 px bar along the top: the columns start under it and are
+        // that much shorter; along the screen nothing changes.
+        ws.set_area(Rectangle::new((0, 30).into(), (OUT.0, OUT.1 - 30).into()), now, false);
+        assert_eq!(windows[0].size.get(), Some((column_width(), OUT.1 - 30 - 2 * GAP)));
+        let pos: Vec<_> = ws.positions(ME, now).map(|(w, p)| (w.id, (p.x, p.y))).collect();
+        assert_eq!(pos, vec![(1, (GAP, 30 + GAP)), (2, (2 * GAP + column_width(), 30 + GAP))]);
+        assert_eq!(ws.targets().next().unwrap().1.loc.y, 30 + GAP);
+        // One along the left edge shifts them right.
+        ws.set_area(Rectangle::new((40, 0).into(), (OUT.0 - 40, OUT.1).into()), now, false);
+        assert_eq!(ws.positions(ME, now).next().unwrap().1, (40 + GAP, GAP).into());
     }
 }
 

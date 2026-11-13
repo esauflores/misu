@@ -73,6 +73,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/winit.rs` | nested backend and rendering |
 | `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
 | `src/dmabuf.rs` | linux-dmabuf: formats, deferred imports |
+| `src/layers.rs` | layer shell: bars, launchers, their room and focus |
 | `src/handlers.rs` | Wayland protocol handlers |
 | `tests/unit.rs`, `tests/e2e.rs` | tests |
 
@@ -81,7 +82,7 @@ mise install                                   # Rust, pinned in mise.toml
 Works nested (winit): several seats, per-seat views and animations, focus
 and moves, workspaces made on demand, move-to-workspace, close, screens
 (virtual ones through `screen-new`), unplug and replug, `take-workspace`,
-launch tracking, the control socket with `tree` and `subscribe`. Tests: 42
+launch tracking, the control socket with `tree` and `subscribe`. Tests: 43
 unit plus the e2e run; clippy clean.
 
 Step 1 implementation: explicit `--backend drm` (winit remains the default),
@@ -96,8 +97,18 @@ ID (VM: 1366x768 to 1024x768 and back), and at poweroff wm stops before
 seatd. linux-dmabuf client buffers (`src/dmabuf.rs`) work: the e2e run checks
 kitty's Mesa dmabufs are imported on this laptop's Intel GPU. wm targets this
 laptop: one Intel GPU drives the panel and every port, so multi-GPU is out of
-scope (hotplug of a GPU is handled, rendering across two is not). Step 2 is
-next.
+scope (hotplug of a GPU is handled, rendering across two is not).
+
+Step 2: layer shell (`src/layers.rs`). Layer surfaces belong to a screen;
+their exclusive zones shrink its workspaces' area (`Screen::area`, offset
+in `Workspace::positions`/`targets`). Keyboard focus for them is per seat
+(`SeatData::layer_focus`): `Exclusive` (fuzzel) goes to the launching seat
+and survives clicks on windows; `OnDemand` goes to the clicking seat. The
+e2e run checks a Quickshell bar's room and fuzzel's focus; Misu's real bar
+runs in wm, and its `services/Wm.qml` follows `wm msg subscribe` when
+`$WM_SOCK` is set (scroll otherwise). Not yet: layer popups' grabs, a bar
+per seat (one screen's layers are everyone's on it), Misu's `misu-ai-*` and
+the AI dot. Step 3 is next.
 
 Known and left for now:
 
@@ -122,8 +133,9 @@ Misu's `AGENTS.md`) before the next.
    by default; a config line puts a keyboard or mouse on another), a session
    through libseat, rendering per output with damage tracking instead of a
    full redraw each frame.
-2. **Layer shell**, so Quickshell (the bar, the greeter) and fuzzel run.
-   Then port the bar's `services/Wm.qml` to `wm msg subscribe`.
+2. **Layer shell (implemented; nested e2e and the real bar checked)**, so
+   Quickshell (the bar, the greeter) and fuzzel run. Then port the bar's
+   `services/Wm.qml` to `wm msg subscribe`.
 3. **Key bindings and a config file**: fill `binding()`, read Misu's
    bindings (Super+n, Super+arrows, …) from a file, plus the options that are
    flags now.

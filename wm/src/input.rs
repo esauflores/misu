@@ -11,6 +11,7 @@ use smithay::{
         pointer::{AxisFrame, ButtonEvent, MotionEvent},
     },
     utils::{Logical, Point, Size, SERIAL_COUNTER},
+    wayland::shell::wlr_layer::{KeyboardInteractivity, Layer},
 };
 
 use crate::{
@@ -169,14 +170,45 @@ impl State {
         let pointer = self.seats[seat].seat.get_pointer().unwrap();
         let serial = SERIAL_COUNTER.next_serial();
         if state == ButtonState::Pressed && !pointer.is_grabbed() {
-            // Clicking focuses without scrolling: the window is visible already.
-            let window = self.window_under(seat, pointer.current_location()).map(|(w, _)| w);
-            if window.is_some() {
-                self.focus(seat, window, false);
-            }
+            self.click_focus(seat, pointer.current_location());
         }
         pointer.button(self, &ButtonEvent { button, state, serial, time });
         pointer.frame(self);
+    }
+
+    /// A click focuses what it lands on, without scrolling: a window is
+    /// visible already. A layer surface takes the keyboard if it wants it; a
+    /// click on a window takes it back, unless a layer surface holds it
+    /// (`Exclusive`, fuzzel).
+    fn click_focus(&mut self, seat: usize, pos: Point<f64, Logical>) {
+        let layer = |state: &Self, layers: &[Layer]| state.layer_under(seat, layers, pos).map(|(l, _, _)| l);
+        let target = match layer(self, &[Layer::Overlay, Layer::Top]) {
+            Some(l) => Err(l),
+            None => match self.window_under(seat, pos) {
+                Some((window, _)) => Ok(window),
+                None => match layer(self, &[Layer::Bottom, Layer::Background]) {
+                    Some(l) => Err(l),
+                    None => return,
+                },
+            },
+        };
+        match target {
+            Err(layer) => {
+                if layer.can_receive_keyboard_focus() {
+                    self.focus_layer(seat, Some(layer));
+                }
+            }
+            Ok(window) => {
+                let held = self.seats[seat]
+                    .layer_focus
+                    .as_ref()
+                    .is_some_and(|l| l.cached_state().keyboard_interactivity == KeyboardInteractivity::Exclusive);
+                if !held {
+                    self.seats[seat].layer_focus = None;
+                }
+                self.focus(seat, Some(window), false);
+            }
+        }
     }
 
     pub fn run(&mut self, seat: usize, action: Action) {

@@ -56,8 +56,9 @@ struct Column<W> {
 }
 
 pub struct Workspace<W: Tile = Window> {
-    /// The screen size it is laid out for.
-    size: Size<i32, Logical>,
+    /// The part of its screen it is laid out in: all of it but what layer
+    /// surfaces (a bar) keep for themselves, in the screen's coordinates.
+    area: Rectangle<i32, Logical>,
     columns: Vec<Column<W>>,
     /// Each seat's scroll position, by seat index.
     views: Vec<Anim>,
@@ -65,17 +66,28 @@ pub struct Workspace<W: Tile = Window> {
 
 impl<W: Tile> Workspace<W> {
     pub fn new(size: Size<i32, Logical>) -> Self {
-        Self { size, columns: Vec::new(), views: Vec::new() }
+        Self { area: Rectangle::from_size(size), columns: Vec::new(), views: Vec::new() }
     }
 
     pub fn size(&self) -> Size<i32, Logical> {
-        self.size
+        self.area.size
     }
 
-    /// Lay out again for a screen of this size.
+    pub fn area(&self) -> Rectangle<i32, Logical> {
+        self.area
+    }
+
+    /// Lay out again for a whole screen of this size.
     pub fn resize(&mut self, size: Size<i32, Logical>, now: Instant, animate: bool) {
-        self.size = size;
-        self.arrange(now, animate);
+        self.set_area(Rectangle::from_size(size), now, animate);
+    }
+
+    /// Lay out again in `area` of the screen.
+    pub fn set_area(&mut self, area: Rectangle<i32, Logical>, now: Instant, animate: bool) {
+        if area != self.area {
+            self.area = area;
+            self.arrange(now, animate);
+        }
     }
 
     pub fn is_empty(&self) -> bool {
@@ -113,7 +125,7 @@ impl<W: Tile> Workspace<W> {
 
     /// The size a new column's window gets.
     pub fn new_column_size(&self) -> Size<i32, Logical> {
-        (self.column_width(self.columns.len()), (self.size.h - 2 * GAP).max(1)).into()
+        (self.column_width(self.columns.len()), (self.area.size.h - 2 * GAP).max(1)).into()
     }
 
     /// Add `window` as a new column after `after` (or at the end).
@@ -162,7 +174,7 @@ impl<W: Tile> Workspace<W> {
     pub fn reveal(&mut self, seat: usize, window: &W, now: Instant, animate: bool) {
         let Some(index) = self.index_of(window) else { return };
         let x = self.columns[index].x.target();
-        let (w, gap, screen) = (self.column_width(index) as f64, GAP as f64, self.size.w as f64);
+        let (w, gap, screen) = (self.column_width(index) as f64, GAP as f64, self.area.size.w as f64);
         let view = self.view_target(seat);
         let target = if x - gap < view {
             x - gap
@@ -176,7 +188,7 @@ impl<W: Tile> Workspace<W> {
 
     /// Lay the columns out again and tell the windows their sizes.
     fn arrange(&mut self, now: Instant, animate: bool) {
-        let height = (self.size.h - 2 * GAP).max(1);
+        let height = (self.area.size.h - 2 * GAP).max(1);
         for index in 0..self.columns.len() {
             let (x, width) = (self.column_x(index), self.column_width(index));
             let column = &mut self.columns[index];
@@ -184,7 +196,7 @@ impl<W: Tile> Workspace<W> {
             column.window.configure((width, height).into());
         }
         // Don't leave a view past the last column.
-        let end = (self.column_x(self.columns.len()) - self.size.w as f64).max(0.0);
+        let end = (self.column_x(self.columns.len()) - self.area.size.w as f64).max(0.0);
         for view in &mut self.views {
             if view.target() > end {
                 view.set(end, now, animate);
@@ -208,18 +220,20 @@ impl<W: Tile> Workspace<W> {
     /// Where each window is at `now`, as `seat` sees it on screen.
     pub fn positions(&self, seat: usize, now: Instant) -> impl Iterator<Item = (&W, Point<i32, Logical>)> {
         let view = self.view(seat, now);
+        let origin = self.area.loc;
         self.columns.iter().map(move |c| {
             let x = (c.x.value(now) - view).round() as i32;
-            (&c.window, Point::from((x, GAP)))
+            (&c.window, origin + Point::from((x, GAP)))
         })
     }
 
-    /// Where each window is headed along the workspace, before any view.
+    /// Where each window is headed on the screen, before any view.
     pub fn targets(&self) -> impl Iterator<Item = (&W, Rectangle<i32, Logical>)> {
-        let height = (self.size.h - 2 * GAP).max(1);
+        let height = (self.area.size.h - 2 * GAP).max(1);
+        let origin = self.area.loc;
         self.columns.iter().enumerate().map(move |(i, c)| {
             let x = c.x.target().round() as i32;
-            (&c.window, Rectangle::new((x, GAP).into(), (self.column_width(i), height).into()))
+            (&c.window, Rectangle::new(origin + Point::from((x, GAP)), (self.column_width(i), height).into()))
         })
     }
 
@@ -230,7 +244,7 @@ impl<W: Tile> Workspace<W> {
 
     fn column_width(&self, index: usize) -> i32 {
         let fraction = self.columns.get(index).map_or(DEFAULT_WIDTH, |c| c.width);
-        ((self.size.w as f64 * fraction) as i32 - GAP - GAP / 2).max(1)
+        ((self.area.size.w as f64 * fraction) as i32 - GAP - GAP / 2).max(1)
     }
 
     fn column_x(&self, index: usize) -> f64 {

@@ -78,6 +78,12 @@ restores scanout. Monitor unplug preserves its screen number and workspaces.
 Clients can hand over GPU buffers through linux-dmabuf (as Mesa's EGL does) as
 well as `wl_shm`.
 
+Bars, launchers and backgrounds (Quickshell, fuzzel) use the layer shell.
+Room a bar keeps for itself is taken off its screen's workspaces; `wm msg
+tree` shows each screen's `area` and `layers`. A launcher that wants the
+keyboard gets the keyboard of the seat that started it (`layer_focus` in
+the tree), and gives it back to that seat's window when it closes.
+
 VM checks cover kitty scanout, keyboard and absolute/relative pointer input,
 device assignment to separate seats, two outputs, input/connector/GPU
 unplug and replug, all outputs disconnected, VT recovery, and clean shutdown.
@@ -138,12 +144,13 @@ logs and a screenshot in `target/tmp/e2e/`.
 - `src/input.rs`: bindings, input routing, and the actions they run
 - `src/winit.rs`: the nested backend and rendering
 - `src/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices
+- `src/layers.rs`: the layer shell: bars and launchers, their room and focus
 - `src/handlers.rs`: Wayland protocol handlers
 - `tests/unit.rs`, `tests/e2e.rs`: see Tests
 
 ## Next
 
-- Layer shell (the bar), screencopy, portals, a sway-compatible IPC
+- Screencopy, portals, a sway-compatible IPC
 - Column widths, full screen, popups and grabs per seat
 - Rendering a seat that isn't shown, for its screenshots (screencopy)
 - Server-side decorations (kitty draws its own title bar for now)

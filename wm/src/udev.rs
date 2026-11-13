@@ -549,6 +549,7 @@ impl Hardware {
                     |_, _| Some(output.clone()),
                 );
             }
+            state.layers_frame(state.start_time.elapsed(), Some(Duration::from_millis(16)));
         }
         for screen in state.screens.values_mut() {
             screen.space.refresh();
