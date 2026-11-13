@@ -77,7 +77,11 @@ Alt nested (the host keeps Super) and Super on a VT; `--mod` or
 A binding runs `wm msg`'s commands (`;` between them) for the seat whose
 keyboard pressed it; `null` unbinds a default. Keys are xkb keysym names, in
 any case; `Shift+2` is written with `2`. Command-line flags go over the
-file, and `reload` (or Mod+Ctrl+Shift+R) reads it again.
+file, and `reload` (or Mod+Ctrl+Shift+R) reads it again. `input` sets the
+keyboard (`layout`, `variant`, `options`, `repeat_rate`, `repeat_delay`;
+every seat's), touchpads and mice (`tap`, `drag`, `natural_scroll`, `dwt`,
+`click_method`, `accel_speed`; libinput, on a VT) and
+`focus_follows_mouse`; see `src/settings.rs`.
 
 Each seat on the shown workspace has its pointer drawn with a real cursor:
 the app's (its own surface, or a shape it names), else the theme's arrow,
@@ -189,6 +193,8 @@ logs and a screenshot in `target/tmp/e2e/`.
 - `src/capture.rs`: capture for other programs (grim, screen sharing)
 - `src/decorations.rs`: no title bars from apps; borders, and the colours
 - `src/cursor.rs`: each seat's cursor, from the theme or the app
+- `src/settings.rs`: input settings: keyboard layout and repeat, touchpad
+  and mouse options, focus following the mouse
 - `src/xwayland.rs`: X11 apps, through xwayland-satellite
 - `src/winit.rs`: the nested backend and rendering
 - `src/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices

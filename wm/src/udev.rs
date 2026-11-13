@@ -91,6 +91,8 @@ impl Drop for SessionDevice {
     }
 }
 struct PhysicalInput {
+    /// Kept to set its options again on `reload`.
+    device: smithay::reexports::input::Device,
     seat: usize,
     source: KeyboardSource,
     buttons: HashSet<u32>,
@@ -106,6 +108,8 @@ struct Hardware {
     callbacks_at: Instant,
     callback_output: Output,
     input_devices: HashMap<String, PhysicalInput>,
+    /// The `State::input_generation` its devices' options are from.
+    input_generation: u64,
 }
 
 /// Keeps event sources alive and closes session devices before libseat exits.
@@ -148,6 +152,7 @@ pub fn init(event_loop: &mut EventLoop<'static, State>, state: &mut State) -> Re
         devices: udev.device_list().map(|(id, path)| (id, path.to_owned())).collect(),
         callbacks_at: Instant::now(),
         input_devices: HashMap::new(),
+        input_generation: 0,
         callback_output: crate::state::new_output("unseen", "callbacks", "", (1280, 720).into()),
     }));
     let mut backend = Backend {
@@ -252,6 +257,12 @@ pub fn init(event_loop: &mut EventLoop<'static, State>, state: &mut State) -> Re
                     state.fail_shots("the session is paused (another VT)");
                     return TimeoutAction::ToDuration(Duration::from_millis(16));
                 }
+                if hw.input_generation != state.input_generation {
+                    hw.input_generation = state.input_generation;
+                    for input in hw.input_devices.values_mut() {
+                        state.config.input.apply(&mut input.device);
+                    }
+                }
                 hw.render(state);
                 let next = hw
                     .gpus
@@ -315,13 +326,17 @@ impl Hardware {
         }
         let seat = state.config.device_seat(&device.name());
         let data = self.input_devices.entry(id.clone()).or_insert_with(|| PhysicalInput {
+            device: device.clone(),
             seat,
             source: KeyboardSource::new_auxiliary(),
             buttons: HashSet::new(),
             keys: HashSet::new(),
         });
         match event {
-            InputEvent::DeviceAdded { .. } => tracing::info!(device = %device.name(), seat, "input connected"),
+            InputEvent::DeviceAdded { .. } => {
+                tracing::info!(device = %device.name(), seat, "input connected");
+                state.config.input.apply(&mut device);
+            }
             InputEvent::Keyboard { event } => {
                 if event.state() == KeyState::Pressed {
                     data.keys.insert(event.key_code());

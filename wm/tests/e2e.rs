@@ -776,6 +776,21 @@ GLib.MainLoop().run()
     }
     assert_eq!(focus(&wm.tree(), 0), dialog["id"].as_u64(), "the dialog has the focus");
     wm.msg(&format!("seat 0 screenshot {}", dir.join("dialog.png").display()));
+
+    // Focus follows the mouse, once the config says so (and `reload`):
+    // onto the window beside the dialog, then back onto the dialog.
+    let config = dir.join("config.json");
+    fs::write(&config, r#"{"input": {"focus_follows_mouse": true}}"#).unwrap();
+    wm.msg("seat 0 reload");
+    let tree = wm.tree();
+    let (px, py) = centre(&tree, 0, &parent);
+    wm.msg(&format!("seat 0 pointer {} {}", px - n(&parent, "width") / 2 + 30, py));
+    assert_eq!(focus(&wm.tree(), 0), parent["id"].as_u64(), "the window under the pointer");
+    let (dx, dy) = centre(&tree, 0, &dialog);
+    wm.msg(&format!("seat 0 pointer {dx} {dy}"));
+    assert_eq!(focus(&wm.tree(), 0), dialog["id"].as_u64(), "back on the dialog");
+    fs::write(&config, "{}").unwrap();
+    wm.msg("seat 0 reload");
     kill(&pid);
     wait_for("the window and dialog to go", || {
         let tree = wm.tree();

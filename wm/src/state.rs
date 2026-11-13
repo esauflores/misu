@@ -106,6 +106,9 @@ pub struct State {
     pub _viewporter: smithay::wayland::viewporter::ViewporterState,
     /// X11 apps' display, while xwayland-satellite serves one.
     pub xwayland: Option<crate::xwayland::Xwayland>,
+    /// Bumped when the input settings may have changed (`reload`): the
+    /// backend sets its devices' options again.
+    pub input_generation: u64,
     /// The cursor theme (see `cursor.rs`).
     pub cursors: crate::cursor::Cursors,
     /// Kept alive for its global: apps name their cursor's shape.
@@ -145,6 +148,7 @@ impl State {
             decorations: crate::decorations::new_state(&dh),
             xwayland: None,
             cursors: crate::cursor::Cursors::default(),
+            input_generation: 0,
             _cursor_shape: smithay::wayland::cursor_shape::CursorShapeManagerState::new::<Self>(&dh),
             _viewporter: smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh),
             compositor_state: CompositorState::new::<Self>(&dh),
@@ -161,7 +165,7 @@ impl State {
         // to appear takes.
         for _ in 0..state.config.seats.max(1) {
             let ws = state.new_workspace(None);
-            state.seats.add(&dh, ws);
+            state.seats.add(&dh, ws, &state.config.input.keyboard);
         }
         state
     }
@@ -687,6 +691,16 @@ impl State {
                 let seats = self.config.seats;
                 self.config = crate::Config { seats, backend: self.config.backend, ..new };
                 tracing::info!("config reloaded: {} bindings", self.config.bindings.len());
+                // Keyboards now; libinput devices with the backend's next turn.
+                let keyboard = self.config.input.keyboard.clone();
+                for seat in 0..self.seats.list.len() {
+                    let handle = self.seats[seat].seat.get_keyboard().unwrap();
+                    if let Err(err) = handle.set_xkb_config(self, keyboard.xkb()) {
+                        tracing::warn!("keyboard layout {:?} not set: {err:?}", keyboard.layout);
+                    }
+                    handle.change_repeat_info(keyboard.repeat_rate, keyboard.repeat_delay);
+                }
+                self.input_generation += 1;
             }
             Err(err) => tracing::warn!("config not reloaded: {err}"),
         }
@@ -836,10 +850,14 @@ pub struct Seats {
 
 impl Seats {
     /// A new seat, on `workspace`.
-    pub fn add(&mut self, dh: &DisplayHandle, workspace: WorkspaceId) -> usize {
+    pub fn add(&mut self, dh: &DisplayHandle, workspace: WorkspaceId, keyboard: &crate::settings::Keyboard) -> usize {
         let index = self.list.len();
         let mut seat = self.state.new_wl_seat(dh, format!("seat{index}"));
-        seat.add_keyboard(Default::default(), 200, 25).expect("keyboard");
+        let added = seat.add_keyboard(keyboard.xkb(), keyboard.repeat_delay, keyboard.repeat_rate);
+        if added.is_err() {
+            tracing::warn!("keyboard layout {:?} not found: us instead", keyboard.layout);
+            seat.add_keyboard(Default::default(), keyboard.repeat_delay, keyboard.repeat_rate).expect("keyboard");
+        }
         seat.add_pointer();
         self.list.push(SeatData {
             seat,

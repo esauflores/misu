@@ -78,12 +78,12 @@ impl State {
             InputEvent::PointerMotionAbsolute { event, .. } => {
                 let size = self.screen_size(screen);
                 let pos = clamp_pointer(event.position_transformed(size), size);
-                self.pointer_motion(seat, pos, Event::time(&event));
+                self.pointer_moved(seat, pos, Event::time(&event));
             }
             InputEvent::PointerMotion { event, .. } => {
                 let pointer = self.seats[seat].seat.get_pointer().unwrap();
                 let pos = clamp_pointer(pointer.current_location() + event.delta(), self.screen_size(screen));
-                self.pointer_motion(seat, pos, Event::time(&event));
+                self.pointer_moved(seat, pos, Event::time(&event));
             }
             InputEvent::PointerButton { event, .. } => {
                 self.pointer_button(seat, event.button_code(), event.state(), Event::time(&event));
@@ -146,6 +146,27 @@ impl State {
             _ => {}
         }
         None
+    }
+
+    /// The seat's pointer moved there (a device, or `wm msg pointer`): with
+    /// focus following the mouse, the window it is now on takes the seat's
+    /// keyboard, without scrolling. Not while a menu or a layer surface
+    /// (fuzzel) holds it.
+    pub fn pointer_moved(&mut self, seat: usize, pos: Point<f64, Logical>, time: InputTime) {
+        self.pointer_motion(seat, pos, time);
+        let data = &self.seats[seat];
+        if !self.config.input.focus_follows_mouse
+            || data.layer_focus.is_some()
+            || data.seat.get_pointer().unwrap().is_grabbed()
+            || data.seat.get_keyboard().unwrap().is_grabbed()
+        {
+            return;
+        }
+        if let Some((window, _)) = self.window_under(seat, pos)
+            && data.focus.as_ref() != Some(&window)
+        {
+            self.focus(seat, Some(window), false);
+        }
     }
 
     pub fn pointer_motion(&mut self, seat: usize, pos: Point<f64, Logical>, time: InputTime) {

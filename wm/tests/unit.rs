@@ -687,6 +687,41 @@ mod options {
     }
 
     #[test]
+    fn input_settings_come_from_wm_then_the_file() {
+        use wm::settings::ClickMethod;
+        let input = Config::default().input;
+        assert_eq!((input.keyboard.layout.as_str(), input.keyboard.repeat_rate, input.keyboard.repeat_delay), ("us", 25, 600));
+        assert!(!input.focus_follows_mouse);
+        assert_eq!(input.touchpad.tap, None, "libinput's default unless set");
+        let path = std::env::temp_dir().join(format!("wm-input-config-{}.json", std::process::id()));
+        let parse = |source: &str| {
+            std::fs::write(&path, source).unwrap();
+            Config::from_args(["--config", path.to_str().unwrap()].map(String::from))
+        };
+        let Ok(Command::Run(c)) = parse(
+            r#"{"input": {"keyboard": {"layout": "es", "repeat_rate": 40}, "focus_follows_mouse": true,
+                "touchpad": {"tap": true, "natural_scroll": true, "click_method": "clickfinger"}, "mouse": {"accel_speed": -0.5}}}"#,
+        ) else {
+            panic!()
+        };
+        let i = &c.input;
+        assert_eq!((i.keyboard.layout.as_str(), i.keyboard.repeat_rate, i.keyboard.repeat_delay), ("es", 40, 600));
+        assert!(i.focus_follows_mouse);
+        assert_eq!((i.touchpad.tap, i.touchpad.natural_scroll, i.touchpad.click_method), (Some(true), Some(true), Some(ClickMethod::Clickfinger)));
+        assert_eq!((i.mouse.accel_speed, i.mouse.tap), (Some(-0.5), None));
+        for bad in [
+            r#"{"input": {"keyboard": {"repeat_rate": 0}}}"#,
+            r#"{"input": {"touchpad": {"tap": "yes"}}}"#,
+            r#"{"input": {"mouse": {"accel_speed": 2}}}"#,
+            r#"{"input": {"touchpad": {"click_method": "both"}}}"#,
+            r#"{"input": {"pen": {}}}"#,
+        ] {
+            assert!(parse(bad).is_err(), "{bad}");
+        }
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
     fn x11_apps_are_on_unless_the_file_says_no() {
         assert!(Config::default().xwayland);
         let path = std::env::temp_dir().join(format!("wm-xwayland-config-{}.json", std::process::id()));

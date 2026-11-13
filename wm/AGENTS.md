@@ -97,6 +97,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/capture.rs` | ext-image-copy-capture, foreign toplevel list |
 | `src/decorations.rs` | xdg-decoration (always server side), borders, `colors` |
 | `src/cursor.rs` | xcursor theme, per-seat cursors, tints |
+| `src/settings.rs` | `input`: xkb, repeat, libinput options, focus follows mouse |
 | `src/xwayland.rs` | xwayland-satellite: display, `DISPLAY`, restarts |
 | `src/winit.rs` | nested backend and rendering |
 | `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
@@ -199,8 +200,19 @@ by Misu's install.sh):
   tinted their colour (white × colour; the outline stays black); an app's
   own surface can't be. Nested, the host's cursor is hidden over the
   window. The e2e run checks seat 1's red arrow over the gap.
-- Next: input settings (xkb layout, repeat, touchpad, focus follows
-  mouse), screen settings (mode, scale, position, lid), session lock,
+- Input settings (done): `Config::input` (`settings.rs`), defaults in
+  `config.json`, the file's keys over them. Keyboards get the xkb config
+  and repeat when seats are made (`Seats::add`; an unknown layout falls
+  back to us) and on `reload`. libinput devices get touchpad or mouse
+  options (a device with tap fingers is a touchpad) on `DeviceAdded`, and
+  again when `State::input_generation` (bumped by `reload`) is newer than
+  the backend's. Focus follows the mouse in `pointer_moved` (devices and
+  `wm msg pointer`, not `refresh_pointer`, so columns scrolling under a
+  still pointer don't move focus), never while a menu or layer surface
+  holds the seat. The e2e run turns it on with `reload` and moves seat 0
+  between a window and its dialog; libinput options are untested nested
+  (no libinput there): VM or laptop.
+- Next: screen settings (mode, scale, position, lid), session lock,
   data-control (cliphist), gamma (wlsunset), idle notify/inhibit,
   xdg-activation, layout commands (float toggle, width presets, focus
   previous, overview, jump), agent-seat commands (keys, typing, scroll,

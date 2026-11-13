@@ -13,6 +13,7 @@ pub mod input;
 pub mod ipc;
 pub mod layers;
 pub mod layout;
+pub mod settings;
 pub mod shot;
 pub mod state;
 pub mod udev;
@@ -74,6 +75,9 @@ pub struct Config {
     pub colors: Colors,
     /// X11 apps through xwayland-satellite (if it is on PATH).
     pub xwayland: bool,
+    /// Keyboard layout and repeat, touchpad and mouse options, focus
+    /// following the mouse.
+    pub input: settings::InputConfig,
     /// The file read, if any, and the flags: `reload` reads it again.
     pub path: Option<PathBuf>,
     pub flags: Flags,
@@ -100,6 +104,7 @@ The config file (JSON, default ~/.config/wm/config.json):
   {\"modifier\": \"super\", \"seats\": 2, \"startup\": [\"waybar\"],
    \"devices\": {\"USB Keyboard\": 1},
    \"bindings\": {\"Mod+Return\": \"spawn foot\", \"Mod+w\": null},
+   \"input\": {\"keyboard\": {\"layout\": \"us\"}, \"touchpad\": {\"tap\": true}},
    \"xwayland\": true, \"colors\": {\"seats\": [\"#c1c5dd\", \"#eb5c5c\"], \"inactive\": \"#121318\"}}
 Bindings go over wm's own (see config.json in its source); null unbinds.";
 
@@ -147,7 +152,7 @@ impl Config {
             }
             None => Map::new(),
         };
-        if let Some(key) = file.keys().find(|k| !["modifier", "seats", "startup", "devices", "bindings", "colors", "xwayland"].contains(&k.as_str())) {
+        if let Some(key) = file.keys().find(|k| !["modifier", "seats", "startup", "devices", "bindings", "colors", "xwayland", "input"].contains(&k.as_str())) {
             return Err(format!("unknown config key {key:?}"));
         }
 
@@ -216,13 +221,19 @@ impl Config {
             colors = colors.merged(source)?;
         }
 
+        // wm's own input settings, then the file's over them.
+        let mut input = settings::InputConfig::default();
+        for source in [defaults.get("input"), file.get("input")].into_iter().flatten() {
+            input = input.merged(source)?;
+        }
+
         let xwayland = match file.get("xwayland") {
             None => true,
             Some(Value::Bool(on)) => *on,
             Some(_) => return Err("xwayland must be true or false".into()),
         };
 
-        Ok(Config { backend, modifier, seats, command: flags.command.clone(), startup, devices, bindings, colors, xwayland, path, flags })
+        Ok(Config { backend, modifier, seats, command: flags.command.clone(), startup, devices, bindings, colors, xwayland, input, path, flags })
     }
 
     pub fn from_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {

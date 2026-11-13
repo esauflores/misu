@@ -340,7 +340,7 @@ impl State {
             Command::Subscribe => return Err("subscribe takes a connection of its own".into()),
             Command::Screenshot(_) => return Err("screenshot replies with a frame, over a connection of its own".into()),
             Command::Action(action) => self.run(seat, action),
-            Command::Pointer(x, y) => self.pointer_motion(seat, (x, y).into(), InputTime::now()),
+            Command::Pointer(x, y) => self.pointer_moved(seat, (x, y).into(), InputTime::now()),
             Command::TakeWorkspace(id) => self.take_workspace(seat, WorkspaceId(id))?,
             Command::ScreenNew => {
                 // Make `wm`, model `virtual`, and its number as the serial.
@@ -356,7 +356,7 @@ impl State {
             Command::ScreenAdd(id) => self.connect(ScreenId(id)),
             Command::Click(at) => {
                 if let Some((x, y)) = at {
-                    self.pointer_motion(seat, (x, y).into(), InputTime::now());
+                    self.pointer_moved(seat, (x, y).into(), InputTime::now());
                 }
                 self.pointer_button(seat, BTN_LEFT, ButtonState::Pressed, InputTime::now());
                 self.pointer_button(seat, BTN_LEFT, ButtonState::Released, InputTime::now());
