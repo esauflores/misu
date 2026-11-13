@@ -78,6 +78,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/input.rs` | input routing, `Action` |
 | `src/bindings.rs`, `config.json` | key combos, default bindings |
 | `src/shot.rs` | a seat's view drawn off screen, as a PNG |
+| `src/capture.rs` | ext-image-copy-capture, foreign toplevel list |
 | `src/winit.rs` | nested backend and rendering |
 | `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
 | `src/dmabuf.rs` | linux-dmabuf: formats, deferred imports |
@@ -138,9 +139,21 @@ the path absolute. The e2e run shoots seat 1 while no screen shows it and
 checks its window is in the picture.
 
 Step 5 so far: full-width columns and floating dialogs (above); the e2e
-run opens a GTK 4 window and a dialog for it (python3 with GTK 4). Left
-of step 5: screencopy and portals, XWayland, popup grabs per seat,
-server-side decorations, full screen.
+run opens a GTK 4 window and a dialog for it (python3 with GTK 4).
+Capture (`capture.rs`): `ext-image-copy-capture` with screen and window
+sources and `ext-foreign-toplevel-list`, whose identifiers are the tree's
+window ids. grim 1.5, hyprpicker 0.4 and xdg-desktop-portal-wlr 0.8 all
+speak it, so there is no wlr-screencopy. A screen's capture is its
+viewer's view (`State::view_elements`, shared with `shot.rs`), pointers
+only when asked; a window's is the window alone at its geometry. Frames
+are drawn with the backend's next frame into shm (BGRA from a GL
+readback; no dma-buf targets yet) once something changed (a damage
+tracker per session); a resize sends new constraints and fails the
+frame. The e2e run checks `grim -o` against seat 0's screenshot and
+`grim -T` on seat 1's unseen window. Screen sharing through the portal
+is unchecked: it needs the session's portal setup (step 6).
+Left of step 5: XWayland, popup grabs per seat, server-side decorations,
+full screen.
 
 Known and left for now:
 
@@ -173,7 +186,7 @@ Misu's `AGENTS.md`) before the next.
 4. **Drawing an unseen seat (implemented)**: render a seat's workspace off
    screen, so an agent can screenshot its own workspace (what
    `misu-ai-shot` does with scroll). Screencopy for it is step 5.
-5. **Screencopy and portals** (`ext-image-copy-capture`, wlr-screencopy,
+5. **Screencopy and portals** (`ext-image-copy-capture`, implemented;
    xdg-desktop-portal-wlr) for grim and screen sharing; **XWayland**;
    popup grabs per seat (`TODO` in `handlers.rs`); server-side decorations;
    column widths and full screen.

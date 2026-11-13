@@ -151,6 +151,7 @@ impl CompositorHandler for State {
                 }
             } else if let Some(window) = self.window_for_surface(&root) {
                 window.on_commit();
+                self.update_toplevel(&window);
                 if !is_mapped(&root) {
                     // A null buffer unmaps it: out of the layout until it
                     // shows something again, after a new initial configure.

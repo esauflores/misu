@@ -4,6 +4,7 @@
 //! below.
 
 pub mod bindings;
+pub mod capture;
 pub mod dmabuf;
 pub mod handlers;
 pub mod input;

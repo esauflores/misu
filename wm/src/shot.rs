@@ -19,7 +19,8 @@ use smithay::{
             Bind, ExportMem, Offscreen,
             damage::OutputDamageTracker,
             element::{
-                AsRenderElements, solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement,
+                AsRenderElements, Element, Kind, solid::SolidColorRenderElement,
+                surface::WaylandSurfaceRenderElement,
             },
             gles::{GlesRenderer, GlesTexture},
         },
@@ -30,12 +31,12 @@ use smithay::{
 };
 
 use crate::{
-    state::State,
+    state::{ScreenId, State, WorkspaceId},
     winit::{BACKGROUND, overlay_of},
 };
 
 smithay::backend::renderer::element::render_elements! {
-    ShotElement<=GlesRenderer>;
+    pub ShotElement<=GlesRenderer>;
     Overlay=SolidColorRenderElement,
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
 }
@@ -54,6 +55,7 @@ impl State {
             let result = self.shoot(renderer, shot.seat, &shot.path);
             reply(shot.stream, result);
         }
+        self.take_captures(renderer);
     }
 
     /// Answer the screenshots asked for with `error` (no renderer now).
@@ -61,6 +63,7 @@ impl State {
         for shot in std::mem::take(&mut self.shots) {
             reply(shot.stream, Err(error.into()));
         }
+        self.fail_captures();
     }
 
     /// `seat`'s view, written to `path` as a PNG; its size in the reply.
@@ -70,11 +73,30 @@ impl State {
         let screen = self.screen_of(ws);
         let size = screen.map_or_else(|| self.workspaces[&ws].size(), |id| self.screen_size(id));
         let size: Size<i32, Physical> = (size.w.max(1), size.h.max(1)).into();
-        let scale = Scale::from(1.0);
+        let elements = self.view_elements(renderer, ws, seat, screen, true, now);
+        let pixels = render_rgba(renderer, size, &elements)?;
+        write_png(path, size.w as u32, size.h as u32, &pixels)?;
+        Ok(json!({ "path": path, "width": size.w, "height": size.h }))
+    }
 
-        // Front to back: pointers and marks, layers above the windows, the
-        // windows, layers below.
-        let mut elements: Vec<ShotElement> = overlay_of(self, ws, seat, now).into_iter().map(ShotElement::Overlay).collect();
+    /// Workspace `ws` as seat `viewer` sees it, with `screen`'s layer
+    /// surfaces, front to back: pointers (if `pointers`) and focus marks,
+    /// layers above the windows, the windows, layers below.
+    pub fn view_elements(
+        &mut self,
+        renderer: &mut GlesRenderer,
+        ws: WorkspaceId,
+        viewer: usize,
+        screen: Option<ScreenId>,
+        pointers: bool,
+        now: Instant,
+    ) -> Vec<ShotElement> {
+        let scale = Scale::from(1.0);
+        let mut elements: Vec<ShotElement> = overlay_of(self, ws, viewer, now)
+            .into_iter()
+            .filter(|e| pointers || e.kind() != Kind::Cursor)
+            .map(ShotElement::Overlay)
+            .collect();
         let layers = |renderer: &mut GlesRenderer, upper: bool| -> Vec<ShotElement> {
             let Some(id) = screen else { return Vec::new() };
             let map = layer_map_for_output(&self.screens[&id].output);
@@ -87,7 +109,7 @@ impl State {
                 .collect()
         };
         elements.extend(layers(renderer, true));
-        let placed: Vec<_> = self.workspaces[&ws].positions(seat, now).map(|(w, p)| (w.clone(), p)).collect();
+        let placed: Vec<_> = self.workspaces[&ws].positions(viewer, now).map(|(w, p)| (w.clone(), p)).collect();
         for (window, loc) in placed.into_iter().rev() {
             let at = (loc - window.geometry().loc).to_physical(1);
             elements.extend(
@@ -95,23 +117,24 @@ impl State {
             );
         }
         elements.extend(layers(renderer, false));
-
-        fn error(what: &'static str) -> impl Fn(smithay::backend::renderer::gles::GlesError) -> String {
-            move |err| format!("{what}: {err}")
-        }
-        let mut texture: GlesTexture = renderer
-            .create_buffer(Fourcc::Abgr8888, size.to_logical(1).to_buffer(1, Transform::Normal))
-            .map_err(error("texture"))?;
-        let mut target = renderer.bind(&mut texture).map_err(error("bind"))?;
-        let mut damage = OutputDamageTracker::new(size, 1.0, Transform::Normal);
-        damage.render_output(renderer, &mut target, 0, &elements, BACKGROUND).map_err(|err| format!("render: {err:?}"))?;
-        let mapping = renderer
-            .copy_framebuffer(&target, Rectangle::from_size(size.to_logical(1).to_buffer(1, Transform::Normal)), Fourcc::Abgr8888)
-            .map_err(error("copy"))?;
-        let pixels = renderer.map_texture(&mapping).map_err(error("map"))?;
-        write_png(path, size.w as u32, size.h as u32, pixels)?;
-        Ok(json!({ "path": path, "width": size.w, "height": size.h }))
+        elements
     }
+}
+
+/// `elements` drawn off screen at `size`: RGBA rows, top first.
+pub fn render_rgba(renderer: &mut GlesRenderer, size: Size<i32, Physical>, elements: &[ShotElement]) -> Result<Vec<u8>, String> {
+    fn error(what: &'static str) -> impl Fn(smithay::backend::renderer::gles::GlesError) -> String {
+        move |err| format!("{what}: {err}")
+    }
+    let buffer_size = size.to_logical(1).to_buffer(1, Transform::Normal);
+    let mut texture: GlesTexture = renderer.create_buffer(Fourcc::Abgr8888, buffer_size).map_err(error("texture"))?;
+    let mut target = renderer.bind(&mut texture).map_err(error("bind"))?;
+    let mut damage = OutputDamageTracker::new(size, 1.0, Transform::Normal);
+    damage.render_output(renderer, &mut target, 0, elements, BACKGROUND).map_err(|err| format!("render: {err:?}"))?;
+    let mapping = renderer
+        .copy_framebuffer(&target, Rectangle::from_size(buffer_size), Fourcc::Abgr8888)
+        .map_err(error("copy"))?;
+    Ok(renderer.map_texture(&mapping).map_err(error("map"))?.to_vec())
 }
 
 /// RGBA rows, top first.

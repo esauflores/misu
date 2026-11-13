@@ -307,6 +307,8 @@ fn nested_in_headless_scroll() {
     assert_eq!(read_png(&dir.join("seat0.png")).0, w);
     assert!(wm.try_msg("seat 1 screenshot relative.png").unwrap()["ok"] == false, "wm wants an absolute path");
 
+    grim_captures(&wm, &dir, &runtime, &tree);
+
     // Seat 1 comes over to workspace 1 and scrolls its own view there.
     wm.msg("seat 1 workspace 1");
     wm.msg("seat 1 focus left");
@@ -609,6 +611,69 @@ ShellRoot {
 }
 
 /// A PNG's width and RGBA pixels.
+/// Other programs capture through ext-image-copy-capture: grim takes the
+/// screen as seat 0's screenshot shows it, and seat 1's window, though no
+/// screen shows it, by its id in the tree.
+fn grim_captures(wm: &Wm, dir: &Path, runtime: &Path, tree: &Value) {
+    if !on_path("grim") {
+        eprintln!("grim captures skipped: needs grim");
+        return;
+    }
+    let display = wm.sock.file_name().unwrap().to_string_lossy();
+    let display = display.strip_prefix("wm.").unwrap().strip_suffix(".sock").unwrap().to_string();
+    let grim = |args: &[&str], name: &str| -> (usize, usize, Vec<u8>) {
+        let path = dir.join(name);
+        let status = Command::new("grim")
+            .args(["-t", "ppm"])
+            .args(args)
+            .arg(&path)
+            .env("XDG_RUNTIME_DIR", runtime)
+            .env("WAYLAND_DISPLAY", &display)
+            .status()
+            .unwrap();
+        assert!(status.success(), "grim {args:?}");
+        read_ppm(&path)
+    };
+    let pixel = |w: usize, rgb: &[u8], x: usize, y: usize| rgb[(y * w + x) * 3..(y * w + x) * 3 + 3].to_vec();
+    let near = |a: &[u8], b: &[u8]| a.iter().zip(b).all(|(&a, &b)| a.abs_diff(b) <= 2);
+
+    // The screen: seat 0's view, as its screenshot has it.
+    let screen = &tree["screens"][0];
+    let (w, h, rgb) = grim(&["-o", screen["name"].as_str().unwrap()], "grim-screen.ppm");
+    assert_eq!((w as i64, h as i64), (screen["width"].as_i64().unwrap(), screen["height"].as_i64().unwrap()));
+    // All but seat 0's pointer (grim leaves it out) and a blinking cursor.
+    let (_, rgba) = read_png(&dir.join("seat0.png"));
+    let differ = rgb.as_chunks::<3>().0.iter().zip(rgba.as_chunks::<4>().0).filter(|(a, b)| !near(&a[..], &b[..3])).count();
+    assert!(differ < w * h / 100, "grim and wm's screenshot agree: {differ} pixels differ");
+
+    // Seat 1's window, off screen, alone at its own size.
+    let theirs = &windows(tree, 2)[0];
+    let id = theirs["id"].as_u64().unwrap().to_string();
+    let (w, h, rgb) = grim(&["-T", &id], "grim-window.ppm");
+    assert_eq!((w as i64, h as i64), (theirs["width"].as_i64().unwrap(), theirs["height"].as_i64().unwrap()));
+    assert!(!near(&pixel(w, &rgb, w / 2, h / 2), &[20, 20, 25]), "the window, not the background");
+}
+
+/// A binary PPM (grim -t ppm): width, height, RGB rows.
+fn read_ppm(path: &Path) -> (usize, usize, Vec<u8>) {
+    let data = fs::read(path).unwrap();
+    let mut fields = Vec::new();
+    let mut i = 0;
+    while fields.len() < 4 {
+        while data[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        let start = i;
+        while !data[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        fields.push(String::from_utf8_lossy(&data[start..i]).to_string());
+    }
+    assert_eq!(fields[0], "P6");
+    let (w, h): (usize, usize) = (fields[1].parse().unwrap(), fields[2].parse().unwrap());
+    (w, h, data[i + 1..].to_vec())
+}
+
 fn read_png(path: &Path) -> (usize, Vec<u8>) {
     let decoder = png::Decoder::new(std::io::BufReader::new(fs::File::open(path).unwrap()));
     let mut reader = decoder.read_info().unwrap();

@@ -135,6 +135,11 @@ wm msg subscribe               # stays open: the state, then a line per change
 wm msg help                    # the rest
 ```
 
+Other programs capture through `ext-image-copy-capture`: a screen as it
+shows (`grim -o NAME`), or a window alone, wherever it is and whether or
+not anyone sees it (`grim -T ID`, with its id from `wm msg tree`).
+hyprpicker and xdg-desktop-portal-wlr use it too.
+
 ## Tests
 
 ```sh
@@ -151,7 +156,7 @@ nested in a headless scroll (nothing on screen) with kitty windows and checks
 it through the socket: focus and scrolling, a second seat launching on its own
 workspace off screen (through a forking launcher), two seats with their own
 views of one workspace, clicks after a scroll, a seat's animations on and off,
-workspaces, closing, reaping, a second screen that draws only its own
+grim capturing the screen and an unseen window, workspaces, closing, reaping, a second screen that draws only its own
 windows, unplugging one (its workspace floats, its viewer moves), taking a
 floating workspace over, plugging it back, a new screen for an unseen seat,
 quitting, and that a wm inside another leaves the outer socket alone. It is skipped without `scroll` and `kitty`, and leaves
@@ -169,6 +174,7 @@ logs and a screenshot in `target/tmp/e2e/`.
 - `src/bindings.rs`: key combos and the commands they run
 - `src/input.rs`: input routing, and the actions bindings and `wm msg` run
 - `src/shot.rs`: screenshots of a seat's own view, drawn off screen
+- `src/capture.rs`: capture for other programs (grim, screen sharing)
 - `src/winit.rs`: the nested backend and rendering
 - `src/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices
 - `src/layers.rs`: the layer shell: bars and launchers, their room and focus
@@ -177,6 +183,7 @@ logs and a screenshot in `target/tmp/e2e/`.
 
 ## Next
 
-- Screencopy, portals, a sway-compatible IPC
+- Screen sharing checked through the portal, dma-buf capture, a
+  sway-compatible IPC
 - Full screen, popups and grabs per seat
 - Server-side decorations (kitty draws its own title bar for now)

@@ -95,6 +95,8 @@ pub struct State {
     pub events: Events,
     /// Screenshots asked for, taken with the next frame (see `shot.rs`).
     pub shots: Vec<crate::shot::Shot>,
+    /// Capture by other programs (grim, screen sharing): see `capture.rs`.
+    pub capture: crate::capture::Capture,
 
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
@@ -124,6 +126,7 @@ impl State {
             seats: Seats::default(),
             events: Events::default(),
             shots: Vec::new(),
+            capture: crate::capture::Capture::new(&dh),
             compositor_state: CompositorState::new::<Self>(&dh),
             xdg_shell_state: XdgShellState::new::<Self>(&dh),
             layer_shell_state: WlrLayerShellState::new::<Self>(&dh),
@@ -418,6 +421,7 @@ impl State {
     /// instead, focused by whoever focuses its parent.
     pub fn add_window(&mut self, window: Window) {
         let now = Instant::now();
+        self.list_toplevel(&window);
         if let Some(parent) = self.parent_of(&window)
             && let Some(ws) = self.workspace_of(&parent)
         {
@@ -443,6 +447,7 @@ impl State {
     pub fn remove_window(&mut self, window: &Window) {
         let now = Instant::now();
         let Some(ws) = self.workspace_of(window) else { return };
+        self.unlist_toplevel(window);
         let animate = self.animates_workspace(ws);
         let next = self.ws(ws).remove(window, now, animate);
         for screen in self.screens.values_mut() {
