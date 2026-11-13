@@ -8,14 +8,20 @@ import Quickshell.Io
 
 // scroll (a sway fork) over the i3 IPC socket. Workspaces and outputs come from
 // Quickshell.I3; per-output fullscreen is read from the tree, refreshed on
-// window and workspace events. Outside scroll every list is empty.
+// window and workspace events.
+// Under wm (~/Projects/wm, $WM_SOCK set) they come from `wm msg subscribe`
+// instead: its seats and screens, as the seat the host drives sees them.
+// Outside both every list is empty.
 Singleton {
     id: root
 
-    readonly property bool connected: (Quickshell.env("SWAYSOCK") || Quickshell.env("I3SOCK") || "") !== ""
+    readonly property bool isWm: (Quickshell.env("WM_SOCK") || "") !== ""
+    readonly property bool connected: !root.isWm
+        && (Quickshell.env("SWAYSOCK") || Quickshell.env("I3SOCK") || "") !== ""
 
 
     readonly property var workspaces: {
+        if (root.isWm) return root.wmWorkspaces;
         if (!root.connected) return [];
         const vals = I3.workspaces ? I3.workspaces.values : [];
         const out = [];
@@ -32,7 +38,8 @@ Singleton {
         return out;
     }
 
-    readonly property string focusedOutput: root.connected && I3.focusedMonitor ? I3.focusedMonitor.name : ""
+    readonly property string focusedOutput: root.isWm ? root.wmFocusedOutput
+        : root.connected && I3.focusedMonitor ? I3.focusedMonitor.name : ""
 
 
 
@@ -43,9 +50,18 @@ Singleton {
     // that does not exist yet creates it.
     function focusWorkspace(name) {
         const n = parseInt(name, 10);
+        if (root.isWm) {
+            if (n >= 1 && n <= 9) root.wmMsg(["workspace", String(n)]);
+            return;
+        }
         root.dispatch(String(n) === String(name) ? "workspace number " + n : "workspace \"" + name + "\"");
     }
     function cycleWorkspace(dir) {
+        if (root.isWm) {
+            const n = (root.wmMe ? root.wmMe.number || 1 : 1) + (dir > 0 ? 1 : -1);
+            if (n >= 1 && n <= 9) root.wmMsg(["workspace", String(n)]);
+            return;
+        }
         root.dispatch(dir > 0 ? "workspace next_on_output" : "workspace prev_on_output");
     }
 
@@ -96,5 +112,69 @@ Singleton {
                 treeDebounce.restart();
         }
     }
-    Component.onCompleted: treeDebounce.restart()
+    Component.onCompleted: if (root.connected) treeDebounce.restart()
+
+    // wm: what `wm msg subscribe` says, by id. Each event carries the whole
+    // seat or screen; "gone" only its id.
+    property var wmSeats: ({})
+    property var wmScreens: ({})
+
+    function wmMsg(args) {
+        Quickshell.execDetached(["wm", "msg"].concat(args));
+    }
+
+    function wmEvent(line) {
+        let e;
+        try { e = JSON.parse(line); } catch (err) { return; }
+        const key = e.event === "seat" ? "wmSeats" : e.event === "screen" ? "wmScreens" : "";
+        if (key === "") return;
+        const next = Object.assign({}, root[key]);
+        if (e.change === "gone") delete next[e.id];
+        else next[e.id] = e;
+        root[key] = next;
+    }
+
+    // The seat the host's devices drive: the user's.
+    readonly property var wmMe: {
+        const seats = Object.values(root.wmSeats);
+        return seats.find(s => s.active) || root.wmSeats[0] || null;
+    }
+    readonly property string wmFocusedOutput: {
+        const screen = root.wmMe ? root.wmScreens[root.wmMe.screen] : null;
+        return screen ? screen.name : "";
+    }
+    // The connected screens' workspaces, numbered from 1 on each.
+    readonly property var wmWorkspaces: {
+        const screens = Object.values(root.wmScreens).filter(s => s.connected);
+        screens.sort((a, b) => a.position - b.position);
+        const me = root.wmMe;
+        const out = [];
+        for (const screen of screens)
+            screen.workspaces.forEach((id, i) => out.push({
+                id: id, name: String(i + 1), number: i + 1,
+                active: screen.active === id, focused: me !== null && me.workspace === id,
+                urgent: false, output: screen.name, special: false
+            }));
+        return out;
+    }
+
+    Process {
+        id: wmSubscribe
+        command: ["wm", "msg", "subscribe"]
+        running: root.isWm
+        onStarted: {
+            root.wmSeats = {};
+            root.wmScreens = {};
+        }
+        // wm restarted, or the socket hiccuped: listen again.
+        onExited: if (root.isWm) wmRetry.restart()
+        stdout: SplitParser {
+            onRead: line => root.wmEvent(line)
+        }
+    }
+    Timer {
+        id: wmRetry
+        interval: 1000
+        onTriggered: wmSubscribe.running = true
+    }
 }

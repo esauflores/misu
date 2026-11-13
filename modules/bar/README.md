@@ -90,7 +90,8 @@ Rewriting the file recolors Misu live.
 
 ## Runtime dependencies
 
-Binaries: `scrollmsg`, `nmcli`, `pactl`, `bluetoothctl`, `powerprofilesctl`,
+Binaries: `scrollmsg` (or `wm`, under wm: `services/Wm.qml` follows `wm msg
+subscribe` when `$WM_SOCK` is set), `nmcli`, `pactl`, `bluetoothctl`, `powerprofilesctl`,
 `brightnessctl`, `sh`, and `ai-usagebar` (AUR `ai-usagebar-bin`; the AI usage
 card runs `ai-usagebar usage --json` every five minutes and when opened. Claude
 and Codex work from their CLIs' logins; other providers go in
