@@ -17,7 +17,10 @@ use smithay::{
             exporter::gbm::GbmFramebufferExporter,
         },
         egl::{EGLContext, EGLDevice, EGLDisplay},
-        input::{ButtonState, Event, InputEvent, InputTime, KeyState, KeyboardKeyEvent, PointerButtonEvent},
+        input::{
+            ButtonState, Event, InputEvent, InputTime, KeyState, KeyboardKeyEvent, PointerButtonEvent, Switch, SwitchState,
+            SwitchToggleEvent,
+        },
         libinput::{LibinputInputBackend, LibinputSessionInterface},
         renderer::{
             ImportDma,
@@ -110,6 +113,8 @@ struct Hardware {
     input_devices: HashMap<String, PhysicalInput>,
     /// The `State::input_generation` its devices' options are from.
     input_generation: u64,
+    /// The `State::screen_generation` its screens are set up for.
+    screen_generation: u64,
 }
 
 /// Keeps event sources alive and closes session devices before libseat exits.
@@ -153,6 +158,7 @@ pub fn init(event_loop: &mut EventLoop<'static, State>, state: &mut State) -> Re
         callbacks_at: Instant::now(),
         input_devices: HashMap::new(),
         input_generation: 0,
+        screen_generation: 0,
         callback_output: crate::state::new_output("unseen", "callbacks", "", (1280, 720).into()),
     }));
     let mut backend = Backend {
@@ -263,6 +269,10 @@ pub fn init(event_loop: &mut EventLoop<'static, State>, state: &mut State) -> Re
                         state.config.input.apply(&mut input.device);
                     }
                 }
+                if hw.screen_generation != state.screen_generation {
+                    hw.screen_generation = state.screen_generation;
+                    hw.rescan(state);
+                }
                 hw.render(state);
                 let next = hw
                     .gpus
@@ -297,6 +307,12 @@ impl PhysicalInput {
 
 impl Hardware {
     fn process_input(&mut self, event: InputEvent<LibinputInputBackend>, state: &mut State) {
+        if let InputEvent::SwitchToggle { event } = &event {
+            if SwitchToggleEvent::switch(event) == Some(Switch::Lid) {
+                state.set_lid(SwitchToggleEvent::state(event) == SwitchState::On);
+            }
+            return;
+        }
         let mut device = match &event {
             InputEvent::DeviceAdded { device } | InputEvent::DeviceRemoved { device } => device.clone(),
             InputEvent::Keyboard { event } => event.device(),
@@ -562,7 +578,15 @@ impl Gpu {
         self.scanner.scan_connectors(&self.drm)?;
         // Reconcile the full mapping: a hotplug can reassign CRTCs, and an
         // earlier connector initialization may have failed transiently.
-        let connectors: Vec<_> = self.scanner.crtcs().map(|(info, crtc)| (info.clone(), crtc)).collect();
+        let connectors: Vec<_> = self
+            .scanner
+            .crtcs()
+            .map(|(info, crtc)| (info.clone(), crtc))
+            .filter(|(info, _)| {
+                let (name, identity) = self.names(info);
+                !state.screen_off(&name, &identity)
+            })
+            .collect();
         let gone: Vec<_> = self
             .surfaces
             .iter()
@@ -574,7 +598,11 @@ impl Gpu {
             .map(|(&crtc, _)| crtc)
             .collect();
         for crtc in gone {
-            if let Some(surface) = self.surfaces.remove(&crtc) {
+            if let Some(mut surface) = self.surfaces.remove(&crtc) {
+                // Blank it (turned off, the monitor is still there).
+                if let Err(err) = surface.compositor.clear() {
+                    tracing::debug!(?err, "couldn't blank a screen going away");
+                }
                 surface.disconnect(state, handle);
             }
         }
@@ -587,14 +615,50 @@ impl Gpu {
         Ok(())
     }
 
+    /// A connector's output name (`card1-eDP-1`) and its monitor's identity
+    /// (as `state::identity` makes it, alone).
+    fn names(&self, connector: &connector::Info) -> (String, String) {
+        let (kind, n) = (connector.interface().as_str(), connector.interface_id());
+        let info = display_info::for_connector(&self.drm, connector.handle());
+        let make = info.as_ref().and_then(|i| i.make()).unwrap_or_default();
+        let model = info.as_ref().and_then(|i| i.model()).unwrap_or_default();
+        let serial = info.as_ref().and_then(|i| i.serial()).unwrap_or_default();
+        let identity = crate::state::identity(
+            &make,
+            &model,
+            &serial,
+            &format!("{}-{kind}-{n}", self.identity),
+            false,
+        );
+        (format!("{}-{kind}-{n}", self.name), identity)
+    }
+
     fn connect(&mut self, connector: connector::Info, crtc: crtc::Handle, state: &mut State) -> Result<(), Error> {
-        let mode = connector
+        let preferred = connector
             .modes()
             .iter()
             .find(|m| m.mode_type().contains(ModeTypeFlags::PREFERRED))
             .or_else(|| connector.modes().first())
             .copied()
             .ok_or("connector has no mode")?;
+        let (name, identity) = self.names(&connector);
+        let wanted = crate::screens::find(&state.config.screens, &name, &identity).and_then(|i| state.config.screens[i].mode);
+        let modes: Vec<(i32, i32, i32)> = connector
+            .modes()
+            .iter()
+            .map(|m| {
+                let m = Mode::from(*m);
+                (m.size.w, m.size.h, m.refresh)
+            })
+            .collect();
+        let chosen = wanted.and_then(|wanted| {
+            let index = crate::screens::choose_mode(&modes, wanted);
+            if index.is_none() {
+                tracing::warn!(screen = %name, "no mode {}x{}: using the preferred one", wanted.0, wanted.1);
+            }
+            index
+        });
+        let mode = chosen.map_or(preferred, |i| connector.modes()[i]);
         let wl_mode = Mode::from(mode);
         if let Some(surface) = self.surfaces.get_mut(&crtc) {
             if surface.compositor.pending_mode() == mode {

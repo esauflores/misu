@@ -13,6 +13,7 @@ pub mod input;
 pub mod ipc;
 pub mod layers;
 pub mod layout;
+pub mod screens;
 pub mod settings;
 pub mod shot;
 pub mod state;
@@ -78,6 +79,8 @@ pub struct Config {
     /// Keyboard layout and repeat, touchpad and mouse options, focus
     /// following the mouse.
     pub input: settings::InputConfig,
+    /// Each monitor's mode, the screens' order and which are off.
+    pub screens: Vec<screens::ScreenConfig>,
     /// The file read, if any, and the flags: `reload` reads it again.
     pub path: Option<PathBuf>,
     pub flags: Flags,
@@ -105,6 +108,7 @@ The config file (JSON, default ~/.config/wm/config.json):
    \"devices\": {\"USB Keyboard\": 1},
    \"bindings\": {\"Mod+Return\": \"spawn foot\", \"Mod+w\": null},
    \"input\": {\"keyboard\": {\"layout\": \"us\"}, \"touchpad\": {\"tap\": true}},
+   \"screens\": [{\"match\": \"eDP-1\", \"mode\": \"1366x768@60\"}],
    \"xwayland\": true, \"colors\": {\"seats\": [\"#c1c5dd\", \"#eb5c5c\"], \"inactive\": \"#121318\"}}
 Bindings go over wm's own (see config.json in its source); null unbinds.";
 
@@ -152,7 +156,7 @@ impl Config {
             }
             None => Map::new(),
         };
-        if let Some(key) = file.keys().find(|k| !["modifier", "seats", "startup", "devices", "bindings", "colors", "xwayland", "input"].contains(&k.as_str())) {
+        if let Some(key) = file.keys().find(|k| !["modifier", "seats", "startup", "devices", "bindings", "colors", "xwayland", "input", "screens"].contains(&k.as_str())) {
             return Err(format!("unknown config key {key:?}"));
         }
 
@@ -233,7 +237,12 @@ impl Config {
             Some(_) => return Err("xwayland must be true or false".into()),
         };
 
-        Ok(Config { backend, modifier, seats, command: flags.command.clone(), startup, devices, bindings, colors, xwayland, input, path, flags })
+        let screens = match file.get("screens") {
+            None => Vec::new(),
+            Some(value) => screens::parse(value)?,
+        };
+
+        Ok(Config { backend, modifier, seats, command: flags.command.clone(), startup, devices, bindings, colors, xwayland, input, screens, path, flags })
     }
 
     pub fn from_args(args: impl IntoIterator<Item = String>) -> Result<Command, String> {

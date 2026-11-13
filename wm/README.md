@@ -81,7 +81,10 @@ file, and `reload` (or Mod+Ctrl+Shift+R) reads it again. `input` sets the
 keyboard (`layout`, `variant`, `options`, `repeat_rate`, `repeat_delay`;
 every seat's), touchpads and mice (`tap`, `drag`, `natural_scroll`, `dwt`,
 `click_method`, `accel_speed`; libinput, on a VT) and
-`focus_follows_mouse`; see `src/settings.rs`.
+`focus_follows_mouse`; see `src/settings.rs`. `screens` (on a VT) lists
+monitors by connector (`eDP-1`) or identity, each with an optional `mode`
+(`"1366x768@60"`) and `off`; they go left to right in the list's order. A
+laptop's panel turns off while its lid is closed. See `src/screens.rs`.
 
 Each seat on the shown workspace has its pointer drawn with a real cursor:
 the app's (its own surface, or a shape it names), else the theme's arrow,

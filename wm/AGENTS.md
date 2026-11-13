@@ -98,6 +98,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/decorations.rs` | xdg-decoration (always server side), borders, `colors` |
 | `src/cursor.rs` | xcursor theme, per-seat cursors, tints |
 | `src/settings.rs` | `input`: xkb, repeat, libinput options, focus follows mouse |
+| `src/screens.rs` | `screens`: modes, order, off, laptop panels |
 | `src/xwayland.rs` | xwayland-satellite: display, `DISPLAY`, restarts |
 | `src/winit.rs` | nested backend and rendering |
 | `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
@@ -212,7 +213,20 @@ by Misu's install.sh):
   holds the seat. The e2e run turns it on with `reload` and moves seat 0
   between a window and its dialog; libinput options are untested nested
   (no libinput there): VM or laptop.
-- Next: screen settings (mode, scale, position, lid), session lock,
+- Screen settings (done): `Config::screens` (`screens.rs`), a list
+  matched by connector (`eDP-1`, `card1-eDP-1`) or identity. `State::connect`
+  inserts a screen at its entry's place (`screen_rank`; unlisted ones last),
+  `reload` re-sorts (`order_screens`). On DRM, `Gpu::connect` picks the
+  listed mode (`choose_mode`: nearest refresh, else the highest) over the
+  preferred one, and `Gpu::scan` leaves out connectors `State::screen_off`
+  says are off (listed `off`, or a laptop panel while `lid_closed`),
+  blanking (`DrmCompositor::clear`) and disconnecting them, so their screen
+  floats and comes back as a returning monitor. `screen_generation`
+  (bumped by `reload` and the libinput lid switch) makes the backend
+  rescan. No scale (rendering is 1× throughout: `to_physical(1)`), no
+  rotation and no positions beyond order (screens don't share a pointer
+  space). Unit-tested; modes and the lid need the VM or laptop.
+- Next: session lock,
   data-control (cliphist), gamma (wlsunset), idle notify/inhibit,
   xdg-activation, layout commands (float toggle, width presets, focus
   previous, overview, jump), agent-seat commands (keys, typing, scroll,

@@ -894,6 +894,30 @@ mod input {
         assert!(state.seats[1].intercepted_keys.is_empty());
     }
 
+    #[test]
+    fn screens_go_in_the_configs_order_and_panels_turn_off_with_the_lid() {
+        use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
+        use wm::{Backend, Config, screens, state::{State, new_output}};
+        if !isolated("input::screens_go_in_the_configs_order_and_panels_turn_off_with_the_lid") {
+            return;
+        }
+        let order = screens::parse(&serde_json::json!([{"match": "HDMI-A-1"}, {"match": "eDP-1"}, {"match": "DP-9", "off": true}])).unwrap();
+        let mut event_loop = EventLoop::try_new().unwrap();
+        let mut state = State::new(&mut event_loop, Display::new().unwrap(), Config { backend: Backend::Drm, screens: order, ..Default::default() });
+        let panel = state.add_screen(new_output("card1-eDP-1", "panel", "1", (1366, 768).into()));
+        let other = state.add_screen(new_output("card1-DP-2", "other", "2", (800, 600).into()));
+        let tv = state.add_screen(new_output("card1-HDMI-A-1", "tv", "3", (1920, 1080).into()));
+        // Configured ones in the list's order, then the rest as plugged.
+        assert_eq!(state.connected, vec![tv, panel, other]);
+        assert!(state.screen_off("card1-DP-9", "") && !state.screen_off("card1-eDP-1", ""));
+        state.set_lid(true);
+        assert!(state.screen_off("card1-eDP-1", "") && !state.screen_off("card1-HDMI-A-1", ""));
+        assert_eq!(state.screen_generation, 1);
+        state.config.screens.swap(0, 1);
+        state.order_screens();
+        assert_eq!(state.connected, vec![panel, tv, other]);
+    }
+
     /// Run `test` again in a child with its own socket directory, so a
     /// backend-free State doesn't change the environment of parallel tests.
     /// True in the child, which goes on with the test.

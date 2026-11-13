@@ -109,6 +109,11 @@ pub struct State {
     /// Bumped when the input settings may have changed (`reload`): the
     /// backend sets its devices' options again.
     pub input_generation: u64,
+    /// Bumped when the screen settings or the lid may have changed: the
+    /// backend sets modes and turns screens on or off again.
+    pub screen_generation: u64,
+    /// The laptop's lid is closed: its panel is off.
+    pub lid_closed: bool,
     /// The cursor theme (see `cursor.rs`).
     pub cursors: crate::cursor::Cursors,
     /// Kept alive for its global: apps name their cursor's shape.
@@ -149,6 +154,8 @@ impl State {
             xwayland: None,
             cursors: crate::cursor::Cursors::default(),
             input_generation: 0,
+            screen_generation: 0,
+            lid_closed: false,
             _cursor_shape: smithay::wayland::cursor_shape::CursorShapeManagerState::new::<Self>(&dh),
             _viewporter: smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh),
             compositor_state: CompositorState::new::<Self>(&dh),
@@ -244,12 +251,45 @@ impl State {
         id
     }
 
-    /// Put a floating screen back on the right of the connected ones.
+    /// Where a screen goes among the connected ones: its entry in the
+    /// config's `screens` (those without one go last, in plug order).
+    fn screen_rank(&self, id: ScreenId) -> usize {
+        let screen = &self.screens[&id];
+        crate::screens::find(&self.config.screens, &screen.output.name(), &screen.identity).unwrap_or(usize::MAX)
+    }
+
+    /// Put the connected screens in the config's order.
+    pub fn order_screens(&mut self) {
+        let mut connected = std::mem::take(&mut self.connected);
+        connected.sort_by_key(|&id| self.screen_rank(id));
+        self.connected = connected;
+    }
+
+    /// Whether the monitor at output `name` with `identity` should be off:
+    /// the config says so, or it is a laptop panel with the lid closed.
+    pub fn screen_off(&self, name: &str, identity: &str) -> bool {
+        let configured = crate::screens::find(&self.config.screens, name, identity).is_some_and(|i| self.config.screens[i].off);
+        configured || (self.lid_closed && crate::screens::is_internal(name))
+    }
+
+    /// The lid closed or opened.
+    pub fn set_lid(&mut self, closed: bool) {
+        if self.lid_closed != closed {
+            tracing::info!("lid {}", if closed { "closed" } else { "opened" });
+            self.lid_closed = closed;
+            self.screen_generation += 1;
+        }
+    }
+
+    /// Put a floating screen back among the connected ones, in the
+    /// config's order (else on the right).
     pub fn connect(&mut self, id: ScreenId) {
         if self.connected.contains(&id) || !self.screens.contains_key(&id) {
             return;
         }
-        self.connected.push(id);
+        let rank = self.screen_rank(id);
+        let at = self.connected.iter().position(|&s| self.screen_rank(s) > rank).unwrap_or(self.connected.len());
+        self.connected.insert(at, id);
         self.resize_screen(id);
         self.settle_viewers();
         tracing::info!("screen {} ({}) connected", id.0, self.screens[&id].identity);
@@ -701,6 +741,8 @@ impl State {
                     handle.change_repeat_info(keyboard.repeat_rate, keyboard.repeat_delay);
                 }
                 self.input_generation += 1;
+                self.screen_generation += 1;
+                self.order_screens();
             }
             Err(err) => tracing::warn!("config not reloaded: {err}"),
         }
