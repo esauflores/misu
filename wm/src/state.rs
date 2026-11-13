@@ -34,7 +34,10 @@ use std::{
 
 use smithay::{
     backend::renderer::{element::solid::SolidColorBuffer, utils::with_renderer_surface_state},
-    desktop::{LayerSurface, PopupManager, Space, Window, WindowSurfaceType, layer_map_for_output, space::SpaceElement},
+    desktop::{
+        LayerSurface, PopupGrab, PopupManager, Space, Window, WindowSurfaceType, find_popup_root_surface, layer_map_for_output,
+        space::SpaceElement,
+    },
     input::{Seat, SeatState, keyboard::Keycode},
     output::{Mode as OutputMode, Output, PhysicalProperties, Subpixel},
     reexports::{
@@ -44,7 +47,7 @@ use smithay::{
             Display, DisplayHandle, Resource, backend::ClientData, protocol::wl_surface::WlSurface,
         },
     },
-    utils::{Logical, Physical, Point, Rectangle, SERIAL_COUNTER, Size},
+    utils::{Logical, Physical, Point, Rectangle, SERIAL_COUNTER, Serial, Size},
     wayland::{
         compositor::{CompositorClientState, CompositorState, with_states},
         output::OutputManagerState,
@@ -514,6 +517,29 @@ impl State {
     }
 
     /// Give `seat`'s keyboard to its layer surface, else its window.
+    /// Let go of the grabs of menus that closed. Smithay ends them only
+    /// with the seat's next event; until then the keyboard would stay off
+    /// the window.
+    pub fn end_menus(&mut self) {
+        for seat in 0..self.seats.list.len() {
+            let Some(menu) = self.seats[seat].menu.clone() else { continue };
+            if !menu.has_ended() {
+                continue;
+            }
+            self.seats.list[seat].menu = None;
+            let ours = |serial: Serial| serial == menu.serial() || Some(serial) == menu.previous_serial();
+            let data = &self.seats[seat];
+            let (pointer, keyboard) = (data.seat.get_pointer().unwrap(), data.seat.get_keyboard().unwrap());
+            if pointer.with_grab(|serial, _| ours(serial)) == Some(true) {
+                pointer.unset_grab(self, SERIAL_COUNTER.next_serial(), smithay::backend::input::InputTime::now());
+            }
+            if keyboard.with_grab(|serial, _| ours(serial)) == Some(true) {
+                keyboard.unset_grab(self);
+            }
+            self.update_keyboard(seat);
+        }
+    }
+
     pub fn update_keyboard(&mut self, seat: usize) {
         let data = &self.seats[seat];
         let surface = match &data.layer_focus {
@@ -522,6 +548,18 @@ impl State {
         };
         let keyboard = data.seat.get_keyboard().unwrap();
         if keyboard.current_focus() != surface {
+            // A menu open elsewhere holds the keyboard: its focus moving on
+            // (to another window, workspace or layer surface) closes it.
+            if let Some(current) = keyboard.current_focus()
+                && let Some(popup) = self.popups.find_popup(&current)
+                && let Ok(root) = find_popup_root_surface(&popup)
+                && surface.as_ref() != Some(&root)
+            {
+                let popups: Vec<_> = PopupManager::popups_for_surface(&root).map(|(p, _)| p).collect();
+                for popup in popups {
+                    let _ = PopupManager::dismiss_popup(&root, &popup);
+                }
+            }
             keyboard.set_focus(self, surface, SERIAL_COUNTER.next_serial());
         }
     }
@@ -774,6 +812,8 @@ pub struct SeatData {
     pub focus: Option<Window>,
     /// A layer surface with its keyboard instead of `focus` (fuzzel, say).
     pub layer_focus: Option<LayerSurface>,
+    /// The menu (popup grab) holding its pointer and keyboard.
+    pub menu: Option<PopupGrab<State>>,
     /// Its own setting; see `State::animates`.
     pub animate: bool,
     pub cursor: SolidColorBuffer,
@@ -802,6 +842,7 @@ impl Seats {
             workspace,
             focus: None,
             layer_focus: None,
+            menu: None,
             animate: true,
             cursor: SolidColorBuffer::new((CURSOR_SIZE, CURSOR_SIZE), color),
             mark: SolidColorBuffer::new((1, MARK_HEIGHT), color),

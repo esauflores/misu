@@ -11,7 +11,9 @@ built around several seats on one screen:
   and a workspace is a row of them to scroll along. A window an app opens
   for another of its windows (a dialog, a file picker) floats centred over
   that one at its own size instead. Full screen (`Mod+f`, or the app
-  asking) a window covers the whole screen, bar and all.
+  asking) a window covers the whole screen, bar and all. A menu holds
+  the pointer and keyboard of the seat that opened it, and only that
+  seat's.
 - **Animations are per seat**: a seat's changes animate when it has them on
   and it is the one on screen; everything else happens at once. A change in
   the middle of an animation carries on from where it is, never restarts.
@@ -157,7 +159,8 @@ nested in a headless scroll (nothing on screen) with kitty windows and checks
 it through the socket: focus and scrolling, a second seat launching on its own
 workspace off screen (through a forking launcher), two seats with their own
 views of one workspace, clicks after a scroll, a seat's animations on and off,
-grim capturing the screen and an unseen window, workspaces, closing, reaping, a second screen that draws only its own
+grim capturing the screen and an unseen window, full screen over a bar,
+a dialog floating over its window, a menu's grab, workspaces, closing, reaping, a second screen that draws only its own
 windows, unplugging one (its workspace floats, its viewer moves), taking a
 floating workspace over, plugging it back, a new screen for an unseen seat,
 quitting, and that a wm inside another leaves the outer socket alone. It is skipped without `scroll` and `kitty`, and leaves
@@ -186,5 +189,4 @@ logs and a screenshot in `target/tmp/e2e/`.
 
 - Screen sharing checked through the portal, dma-buf capture, a
   sway-compatible IPC
-- Popups and grabs per seat
 - Server-side decorations (kitty draws its own title bar for now)

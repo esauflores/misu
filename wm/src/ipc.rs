@@ -490,6 +490,8 @@ impl State {
                     "pointer": { "x": p.x, "y": p.y, "over": over },
                     // The layer surface with its keyboard, by namespace.
                     "layer_focus": s.layer_focus.as_ref().map(|l| l.namespace().to_owned()),
+                    // A menu (popup grab) holds its pointer and keyboard.
+                    "grab": pointer.is_grabbed() || s.seat.get_keyboard().is_some_and(|k| k.is_grabbed()),
                 });
                 with(self.seat_json(i), more)
             })

@@ -3,7 +3,10 @@
 
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
-    desktop::{PopupKind, Window, find_popup_root_surface, get_popup_toplevel_coords},
+    desktop::{
+        PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Window, find_popup_root_surface,
+        get_popup_toplevel_coords,
+    },
     input::{
         Seat, SeatHandler, SeatState,
         dnd::{DnDGrab, DndGrabHandler, GrabType, Source},
@@ -229,8 +232,39 @@ impl XdgShellHandler for State {
     // Tiled windows don't move or resize themselves.
     fn move_request(&mut self, _surface: ToplevelSurface, _seat: wl_seat::WlSeat, _serial: Serial) {}
 
-    fn grab(&mut self, _surface: PopupSurface, _seat: wl_seat::WlSeat, _serial: Serial) {
-        // TODO: popup grabs, per seat.
+    /// A menu takes the pointer and keyboard of the seat it was opened
+    /// with (the client names it), and only that seat's: a click outside
+    /// it closes it, the other seats carry on.
+    fn grab(&mut self, surface: PopupSurface, seat: wl_seat::WlSeat, serial: Serial) {
+        let Some(seat) = Seat::<State>::from_resource(&seat) else { return };
+        let kind = PopupKind::Xdg(surface);
+        let Ok(root) = find_popup_root_surface(&kind) else { return };
+        // Only for popups of what is laid out: a window or a layer surface.
+        if self.window_for_surface(&root).is_none() && self.layer_of(&root).is_none() {
+            return;
+        }
+        let Ok(mut grab) = self.popups.grab_popup(root, kind, &seat, serial) else { return };
+        // Granted only for the click or key that opened it, or to a popup
+        // nested in a grabbing one.
+        let earlier = grab.previous_serial();
+        if let Some(keyboard) = seat.get_keyboard() {
+            if keyboard.is_grabbed() && !(keyboard.has_grab(serial) || keyboard.has_grab(earlier.unwrap_or(serial))) {
+                grab.ungrab(PopupUngrabStrategy::All);
+                return;
+            }
+            keyboard.set_focus(self, grab.current_grab(), serial);
+            keyboard.set_grab(self, PopupKeyboardGrab::new(&grab), serial);
+        }
+        if let Some(pointer) = seat.get_pointer() {
+            if pointer.is_grabbed() && !(pointer.has_grab(serial) || pointer.has_grab(earlier.unwrap_or_else(|| grab.serial()))) {
+                grab.ungrab(PopupUngrabStrategy::All);
+                return;
+            }
+            pointer.set_grab(self, PopupPointerGrab::new(&grab), serial, Focus::Keep);
+        }
+        if let Some(i) = self.seats.list.iter().position(|s| s.seat == seat) {
+            self.seats.list[i].menu = Some(grab);
+        }
     }
 }
 

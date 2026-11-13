@@ -51,6 +51,8 @@ pub struct Shot {
 impl State {
     /// Take the screenshots asked for since the last frame, and reply.
     pub fn take_shots(&mut self, renderer: &mut GlesRenderer) {
+        // Each frame: menus that closed let go of their seats.
+        self.end_menus();
         for shot in std::mem::take(&mut self.shots) {
             let result = self.shoot(renderer, shot.seat, &shot.path);
             reply(shot.stream, result);

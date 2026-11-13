@@ -493,6 +493,7 @@ fn nested_in_headless_scroll() {
     assert_eq!(own_windows(&tree), vec![last]);
 
     dialog_floats(&wm, &dir);
+    menu_grabs(&wm, &dir);
 
     // Errors come back as errors.
     let reply = wm.try_msg("seat 7 focus left").unwrap();
@@ -762,3 +763,62 @@ GLib.MainLoop().run()
         (titled(&tree, "e2e-parent").is_none() && titled(&tree, "e2e-dialog").is_none()).then_some(())
     });
 }
+
+/// A GTK window's menu (an autohide popover, an xdg_popup grab) holds the
+/// pointer and keyboard of seat 0, which opened it, and no one else's; a
+/// click of seat 0's outside it closes it.
+fn menu_grabs(wm: &Wm, dir: &Path) {
+    let gtk = Command::new("python3")
+        .args(["-c", "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk"])
+        .status()
+        .is_ok_and(|s| s.success());
+    if !gtk {
+        eprintln!("menus: skipped, needs python3 with GTK 4");
+        return;
+    }
+    let closed = dir.join("menu-closed");
+    let script = dir.join("menu.py");
+    fs::write(
+        &script,
+        format!(
+            r#"import gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk, GLib
+Gtk.init()
+window = Gtk.Window(title="e2e-menu")
+box = Gtk.Box(valign=Gtk.Align.START, halign=Gtk.Align.START)
+button = Gtk.Button(label="menu")
+box.append(button)
+window.set_child(box)
+popover = Gtk.Popover(autohide=True, child=Gtk.Label(label="an item"))
+popover.set_parent(button)
+popover.connect("closed", lambda _: open({closed:?}, "w").write("closed"))
+window.present()
+GLib.timeout_add(500, lambda: popover.popup() and False)
+GLib.MainLoop().run()
+"#,
+            closed = closed.display().to_string()
+        ),
+    )
+    .unwrap();
+    let pid = spawn_tracked(wm, 0, dir, "menu", &format!("env GDK_BACKEND=wayland python3 {}", script.display()));
+    wait_for("the menu to grab seat 0", || (seat(&wm.tree(), 0)["grab"] == true).then_some(()));
+    let tree = wm.tree();
+    assert_eq!(seat(&tree, 1)["grab"], false, "seat 1 is free");
+    wm.msg(&format!("seat 0 screenshot {}", dir.join("menu.png").display()));
+    assert!(!closed.exists());
+
+    // Seat 0 clicks low in the window, far from the menu by the button.
+    let window = tree["workspaces"].as_array().unwrap().iter()
+        .flat_map(|ws| ws["windows"].as_array().unwrap().iter())
+        .find(|w| w["title"] == "e2e-menu").unwrap().clone();
+    let (x, y) = centre(&tree, 0, &window);
+    wm.msg(&format!("seat 0 click {x} {}", y + window["height"].as_i64().unwrap() / 3));
+    wait_for("the menu closed", || closed.exists().then_some(()));
+    // Free again: its next frame lets go of the grab, the keyboard is back
+    // on the window.
+    wait_for("seat 0 free again", || (seat(&wm.tree(), 0)["grab"] == false).then_some(()));
+    assert_eq!(focus(&wm.tree(), 0), window["id"].as_u64());
+    kill(&pid);
+}
+

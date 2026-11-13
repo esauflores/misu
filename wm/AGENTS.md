@@ -57,6 +57,13 @@ mise install                                   # Rust, pinned in mise.toml
   nor hit; Overlay ones still are. Every backend draws a screen through
   `State::screen_elements` (shared with screenshots and capture), not the
   `Space`, which would put Top layers over it.
+- **Menus** (xdg popup grabs) are per seat: the client names the seat
+  (`grab`'s `wl_seat`), and only that seat's pointer and keyboard are
+  held (`SeatData::menu`). Smithay closes a menu on a click on another
+  client's surface; one inside the same app is the app's (GTK closes its
+  popover). A closed menu's grab is let go each frame (`end_menus`), not
+  with the seat's next event, and a seat's focus moving elsewhere (window,
+  workspace, layer surface) closes its menus (`update_keyboard`).
 - **Clicks** focus without scrolling; keyboard and explicit moves reveal the
   window in that seat's view.
 - **Screens** have an incrementing `ScreenId`; make, model and serial (plus
@@ -164,7 +171,10 @@ is unchecked: it needs the session's portal setup (step 6).
 Full screen (above): `wm msg fullscreen [on|off|toggle]`, `Mod+f`, and
 xdg `set_fullscreen` (before the window shows too); the e2e run covers
 the test bar and clicks through where it was.
-Left of step 5: XWayland, popup grabs per seat, server-side decorations.
+Menus (above): the e2e run opens a GTK popover, checks seat 0 alone is
+held, clicks outside it and checks the grab is gone and the window has the
+keyboard back. Closing on a focus change is untested.
+Left of step 5: XWayland, server-side decorations.
 
 Known and left for now:
 
@@ -199,7 +209,7 @@ Misu's `AGENTS.md`) before the next.
    `misu-ai-shot` does with scroll). Screencopy for it is step 5.
 5. **Screencopy and portals** (`ext-image-copy-capture`, implemented;
    xdg-desktop-portal-wlr) for grim and screen sharing; **XWayland**;
-   popup grabs per seat (`TODO` in `handlers.rs`); server-side decorations;
+   popup grabs per seat (implemented); server-side decorations;
    full screen (implemented).
 6. **Port Misu**: the session entry (`misu-session`), the `misu-ai-*`
    scripts to `wm msg seat N …` (most of their workarounds go away), the
