@@ -6,6 +6,7 @@ description = "A scrolling Wayland compositor with several seats and per-workspa
 license = "MIT"
 
 [dependencies]
+png = "0.17"
 serde_json = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }

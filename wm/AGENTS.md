@@ -71,6 +71,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/ipc.rs` | socket, `wm msg`, `tree`, events |
 | `src/input.rs` | input routing, `Action` |
 | `src/bindings.rs`, `config.json` | key combos, default bindings |
+| `src/shot.rs` | a seat's view drawn off screen, as a PNG |
 | `src/winit.rs` | nested backend and rendering |
 | `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
 | `src/dmabuf.rs` | linux-dmabuf: formats, deferred imports |
@@ -120,7 +121,15 @@ grammar); `null` unbinds. Matching is exact on Ctrl/Alt/Shift/Super with the
 unshifted keysym. `Mod` is Super on DRM and Alt nested. New commands: `focus
 first|last`, `move-to-workspace N follow`, `reload` (seats and backend stay).
 Misu's own bindings file comes with step 6; what it binds that wm lacks
-(fullscreen, floating, column sizes, `jump`) is step 5. Step 4 is next.
+(fullscreen, floating, column sizes, `jump`) is step 5.
+
+Step 4: `wm msg seat N screenshot FILE` draws seat N's own view (its
+scroll position, its pointer and mark, its screen's layer surfaces) into an
+offscreen texture with the next frame and writes a PNG; the reply waits
+for it (`State::shots`, taken in each backend's frame by
+`State::take_shots`; refused while the session is paused). `wm msg` makes
+the path absolute. The e2e run shoots seat 1 while no screen shows it and
+checks its window is in the picture. Step 5 is next.
 
 Known and left for now:
 
@@ -150,9 +159,9 @@ Misu's `AGENTS.md`) before the next.
    `services/Wm.qml` to `wm msg subscribe`.
 3. **Key bindings and a config file (implemented)**: bindings (Super+n,
    Super+arrows, …) from a file, plus the options that are flags now.
-4. **Drawing an unseen seat**: render a seat's workspace off screen for
-   screencopy, so an agent can screenshot its own workspace (what
-   `misu-ai-shot` does with scroll).
+4. **Drawing an unseen seat (implemented)**: render a seat's workspace off
+   screen, so an agent can screenshot its own workspace (what
+   `misu-ai-shot` does with scroll). Screencopy for it is step 5.
 5. **Screencopy and portals** (`ext-image-copy-capture`, wlr-screencopy,
    xdg-desktop-portal-wlr) for grim and screen sharing; **XWayland**;
    popup grabs per seat (`TODO` in `handlers.rs`); server-side decorations;

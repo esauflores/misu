@@ -18,7 +18,7 @@ use smithay::{
     utils::{Point, Rectangle, Transform},
 };
 
-use crate::state::{CURSOR_SIZE, MARK_HEIGHT, NOBODY, ScreenId, State, new_output};
+use crate::state::{CURSOR_SIZE, MARK_HEIGHT, NOBODY, ScreenId, State, WorkspaceId, new_output};
 
 pub(crate) const BACKGROUND: [f32; 4] = [0.08, 0.08, 0.1, 1.0];
 
@@ -68,6 +68,7 @@ pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), 
             if let Err(err) = backend.submit(Some(&[Rectangle::from_size(size)])) {
                 tracing::warn!("submit failed: {err:?}");
             }
+            state.take_shots(backend.renderer());
 
             let elapsed = state.start_time.elapsed();
             // Off-screen seats' windows keep drawing too.
@@ -92,9 +93,13 @@ pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), 
 /// The pointers of the seats on the screen's workspace, and a mark in each
 /// seat's colour above the window it focuses there, in screen coordinates.
 pub(crate) fn overlay(state: &mut State, screen: ScreenId, now: Instant) -> Vec<SolidColorRenderElement> {
+    let Some((shown, viewer)) = state.shown_on(screen) else { return Vec::new() };
+    overlay_of(state, shown, viewer.unwrap_or(NOBODY), now)
+}
+
+/// The same for workspace `shown` as seat `viewer` sees it, on screen or not.
+pub(crate) fn overlay_of(state: &mut State, shown: WorkspaceId, viewer: usize, now: Instant) -> Vec<SolidColorRenderElement> {
     let mut elements = Vec::new();
-    let Some((shown, viewer)) = state.shown_on(screen) else { return elements };
-    let viewer = viewer.unwrap_or(NOBODY);
     let ws = &state.workspaces[&shown];
     let viewer_view = ws.view(viewer, now);
     let placed: Vec<_> = ws.positions(viewer, now).map(|(w, p)| (w.clone(), p)).collect();

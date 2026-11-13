@@ -1,0 +1,133 @@
+//! Screenshots of a seat's own view: its workspace as it sees it (scrolled
+//! its way, its pointer and focus mark, its screen's layer surfaces),
+//! whether or not a screen shows it. `wm msg seat N screenshot FILE` asks;
+//! the backend draws it with its next frame (`State::take_shots`), off
+//! screen, and the reply waits for it.
+
+use std::{
+    io::Write,
+    os::unix::net::UnixStream,
+    path::{Path, PathBuf},
+    time::Instant,
+};
+
+use serde_json::{Value, json};
+use smithay::{
+    backend::{
+        allocator::Fourcc,
+        renderer::{
+            Bind, ExportMem, Offscreen,
+            damage::OutputDamageTracker,
+            element::{
+                AsRenderElements, solid::SolidColorRenderElement, surface::WaylandSurfaceRenderElement,
+            },
+            gles::{GlesRenderer, GlesTexture},
+        },
+    },
+    desktop::layer_map_for_output,
+    utils::{Physical, Rectangle, Scale, Size, Transform},
+    wayland::shell::wlr_layer::Layer,
+};
+
+use crate::{
+    state::State,
+    winit::{BACKGROUND, overlay_of},
+};
+
+smithay::backend::renderer::element::render_elements! {
+    ShotElement<=GlesRenderer>;
+    Overlay=SolidColorRenderElement,
+    Surface=WaylandSurfaceRenderElement<GlesRenderer>,
+}
+
+/// A screenshot asked for, and who waits for it.
+pub struct Shot {
+    pub seat: usize,
+    pub path: PathBuf,
+    pub stream: UnixStream,
+}
+
+impl State {
+    /// Take the screenshots asked for since the last frame, and reply.
+    pub fn take_shots(&mut self, renderer: &mut GlesRenderer) {
+        for shot in std::mem::take(&mut self.shots) {
+            let result = self.shoot(renderer, shot.seat, &shot.path);
+            reply(shot.stream, result);
+        }
+    }
+
+    /// Answer the screenshots asked for with `error` (no renderer now).
+    pub fn fail_shots(&mut self, error: &str) {
+        for shot in std::mem::take(&mut self.shots) {
+            reply(shot.stream, Err(error.into()));
+        }
+    }
+
+    /// `seat`'s view, written to `path` as a PNG; its size in the reply.
+    fn shoot(&mut self, renderer: &mut GlesRenderer, seat: usize, path: &Path) -> Result<Value, String> {
+        let now = Instant::now();
+        let ws = self.seats[seat].workspace;
+        let screen = self.screen_of(ws);
+        let size = screen.map_or_else(|| self.workspaces[&ws].size(), |id| self.screen_size(id));
+        let size: Size<i32, Physical> = (size.w.max(1), size.h.max(1)).into();
+        let scale = Scale::from(1.0);
+
+        // Front to back: pointers and marks, layers above the windows, the
+        // windows, layers below.
+        let mut elements: Vec<ShotElement> = overlay_of(self, ws, seat, now).into_iter().map(ShotElement::Overlay).collect();
+        let layers = |renderer: &mut GlesRenderer, upper: bool| -> Vec<ShotElement> {
+            let Some(id) = screen else { return Vec::new() };
+            let map = layer_map_for_output(&self.screens[&id].output);
+            map.layers()
+                .rev()
+                .filter(|l| matches!(l.layer(), Layer::Overlay | Layer::Top) == upper)
+                .filter_map(|l| map.layer_geometry(l).map(|geo| (geo.loc, l)))
+                .flat_map(|(loc, l)| l.render_elements::<WaylandSurfaceRenderElement<_>>(renderer, loc.to_physical(1), scale, 1.0))
+                .map(ShotElement::Surface)
+                .collect()
+        };
+        elements.extend(layers(renderer, true));
+        let placed: Vec<_> = self.workspaces[&ws].positions(seat, now).map(|(w, p)| (w.clone(), p)).collect();
+        for (window, loc) in placed.into_iter().rev() {
+            let at = (loc - window.geometry().loc).to_physical(1);
+            elements.extend(
+                window.render_elements::<WaylandSurfaceRenderElement<_>>(renderer, at, scale, 1.0).into_iter().map(ShotElement::Surface),
+            );
+        }
+        elements.extend(layers(renderer, false));
+
+        fn error(what: &'static str) -> impl Fn(smithay::backend::renderer::gles::GlesError) -> String {
+            move |err| format!("{what}: {err}")
+        }
+        let mut texture: GlesTexture = renderer
+            .create_buffer(Fourcc::Abgr8888, size.to_logical(1).to_buffer(1, Transform::Normal))
+            .map_err(error("texture"))?;
+        let mut target = renderer.bind(&mut texture).map_err(error("bind"))?;
+        let mut damage = OutputDamageTracker::new(size, 1.0, Transform::Normal);
+        damage.render_output(renderer, &mut target, 0, &elements, BACKGROUND).map_err(|err| format!("render: {err:?}"))?;
+        let mapping = renderer
+            .copy_framebuffer(&target, Rectangle::from_size(size.to_logical(1).to_buffer(1, Transform::Normal)), Fourcc::Abgr8888)
+            .map_err(error("copy"))?;
+        let pixels = renderer.map_texture(&mapping).map_err(error("map"))?;
+        write_png(path, size.w as u32, size.h as u32, pixels)?;
+        Ok(json!({ "path": path, "width": size.w, "height": size.h }))
+    }
+}
+
+/// RGBA rows, top first.
+fn write_png(path: &Path, width: u32, height: u32, pixels: &[u8]) -> Result<(), String> {
+    let file = std::fs::File::create(path).map_err(|err| format!("{}: {err}", path.display()))?;
+    let mut encoder = png::Encoder::new(std::io::BufWriter::new(file), width, height);
+    encoder.set_color(png::ColorType::Rgba);
+    encoder.set_depth(png::BitDepth::Eight);
+    let mut writer = encoder.write_header().map_err(|err| err.to_string())?;
+    writer.write_image_data(pixels).map_err(|err| err.to_string())
+}
+
+fn reply(mut stream: UnixStream, result: Result<Value, String>) {
+    let reply = match result {
+        Ok(value) => json!({ "ok": true, "result": value }),
+        Err(error) => json!({ "ok": false, "error": error }),
+    };
+    let _ = writeln!(stream, "{reply}");
+}

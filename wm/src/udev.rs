@@ -257,6 +257,7 @@ pub fn init(event_loop: &mut EventLoop<'static, State>, state: &mut State) -> Re
             .insert_source(Timer::immediate(), move |_, _, state| {
                 let mut hw = hardware.borrow_mut();
                 if !hw.active {
+                    state.fail_shots("the session is paused (another VT)");
                     return TimeoutAction::ToDuration(Duration::from_millis(16));
                 }
                 hw.render(state);
@@ -532,6 +533,12 @@ impl Hardware {
                     }
                 }
             }
+        }
+        // Screenshots, on the GPU that clients' buffers are on.
+        let id = state.dmabuf.device.filter(|id| self.gpus.contains_key(id)).or_else(|| self.gpus.keys().next().copied());
+        match id.and_then(|id| self.gpus.get_mut(&id)) {
+            Some(gpu) => state.take_shots(&mut gpu.renderer),
+            None => state.fail_shots("no GPU to draw with"),
         }
         // Frame callbacks continue even after the last monitor is unplugged.
         if now >= self.callbacks_at {

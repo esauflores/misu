@@ -124,6 +124,7 @@ prints one JSON line (`{"ok":true,"result":…}` or `{"ok":false,"error":…}`).
 wm msg tree                    # windows, workspaces, seats
 wm msg focus right
 wm msg seat 1 click 300 200    # any seat; without `seat N`, the one the host drives
+wm msg seat 1 screenshot a.png # what seat 1 sees, as a PNG, on screen or not
 wm msg animations off
 wm msg screen-new              # a virtual screen; screen-remove N / screen-add N unplug and replug
 wm msg subscribe               # stays open: the state, then a line per change
@@ -163,6 +164,7 @@ logs and a screenshot in `target/tmp/e2e/`.
 - `src/lib.rs` and `config.json`: options, the config file, default bindings
 - `src/bindings.rs`: key combos and the commands they run
 - `src/input.rs`: input routing, and the actions bindings and `wm msg` run
+- `src/shot.rs`: screenshots of a seat's own view, drawn off screen
 - `src/winit.rs`: the nested backend and rendering
 - `src/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices
 - `src/layers.rs`: the layer shell: bars and launchers, their room and focus
@@ -173,5 +175,4 @@ logs and a screenshot in `target/tmp/e2e/`.
 
 - Screencopy, portals, a sway-compatible IPC
 - Column widths, full screen, popups and grabs per seat
-- Rendering a seat that isn't shown, for its screenshots (screencopy)
 - Server-side decorations (kitty draws its own title bar for now)

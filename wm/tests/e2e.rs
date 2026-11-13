@@ -289,6 +289,21 @@ fn nested_in_headless_scroll() {
     assert_eq!(focus(&tree, 0), Some(ids[2]));
     assert_eq!(tree["screens"][0]["seat"], 0, "still seat 0's workspace on screen");
 
+    // Seat 1's view, though no screen shows it: its own window, at the left
+    // of an otherwise empty workspace. Seat 0's is the screen's.
+    let png = dir.join("seat1.png");
+    let reply = wm.msg(&format!("seat 1 screenshot {}", png.display()));
+    assert_eq!((reply["result"]["width"].as_i64(), reply["result"]["height"].as_i64()), (Some(out_w), tree["screens"][0]["height"].as_i64()));
+    let (w, pixels) = read_png(&png);
+    let at = |x: usize, y: usize| &pixels[(y * w + x) * 4..(y * w + x) * 4 + 4];
+    let window = &windows(&tree, 2)[0];
+    let (cx, cy) = centre(&tree, 1, window);
+    assert_ne!(at(cx as usize, cy as usize), at(w - 4, cy as usize), "the window is drawn: {:?}", at(cx as usize, cy as usize));
+    assert_eq!(at(w - 4, cy as usize), [20, 20, 25, 255], "the background beside it");
+    wm.msg(&format!("seat 0 screenshot {}", dir.join("seat0.png").display()));
+    assert_eq!(read_png(&dir.join("seat0.png")).0, w);
+    assert!(wm.try_msg("seat 1 screenshot relative.png").unwrap()["ok"] == false, "wm wants an absolute path");
+
     // Seat 1 comes over to workspace 1 and scrolls its own view there.
     wm.msg("seat 1 workspace 1");
     wm.msg("seat 1 focus left");
@@ -586,4 +601,14 @@ ShellRoot {
 
     kill(&bar);
     wait_for("the bar's room back", || (wm.tree()["screens"][0]["area"] == full).then_some(()));
+}
+
+/// A PNG's width and RGBA pixels.
+fn read_png(path: &Path) -> (usize, Vec<u8>) {
+    let decoder = png::Decoder::new(std::io::BufReader::new(fs::File::open(path).unwrap()));
+    let mut reader = decoder.read_info().unwrap();
+    let mut pixels = vec![0; reader.output_buffer_size()];
+    let info = reader.next_frame(&mut pixels).unwrap();
+    assert_eq!(info.color_type, png::ColorType::Rgba);
+    (info.width as usize, pixels)
 }

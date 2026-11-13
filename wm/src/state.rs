@@ -93,6 +93,8 @@ pub struct State {
     pub seats: Seats,
     /// Who `wm msg subscribe`s, and what they were last told.
     pub events: Events,
+    /// Screenshots asked for, taken with the next frame (see `shot.rs`).
+    pub shots: Vec<crate::shot::Shot>,
 
     pub compositor_state: CompositorState,
     pub xdg_shell_state: XdgShellState,
@@ -121,6 +123,7 @@ impl State {
             connected: Vec::new(),
             seats: Seats::default(),
             events: Events::default(),
+            shots: Vec::new(),
             compositor_state: CompositorState::new::<Self>(&dh),
             xdg_shell_state: XdgShellState::new::<Self>(&dh),
             layer_shell_state: WlrLayerShellState::new::<Self>(&dh),

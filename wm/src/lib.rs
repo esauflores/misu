@@ -10,6 +10,7 @@ pub mod input;
 pub mod ipc;
 pub mod layers;
 pub mod layout;
+pub mod shot;
 pub mod state;
 pub mod udev;
 pub mod winit;

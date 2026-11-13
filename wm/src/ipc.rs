@@ -33,7 +33,7 @@ use std::{
     ffi::OsStr,
     io::{BufRead, BufReader, Read, Write},
     os::unix::net::{UnixListener, UnixStream},
-    path::PathBuf,
+    path::{Path, PathBuf},
     time::{Duration, Instant},
 };
 
@@ -51,6 +51,7 @@ use smithay::{
 use crate::{
     input::{Action, BTN_LEFT},
     layout::Direction,
+    shot::Shot,
     state::{FALLBACK_SIZE, Screen, ScreenId, State, WorkspaceId, new_output, window_id, window_info},
 };
 
@@ -73,6 +74,7 @@ pub const HELP: &str = "[seat N] COMMAND, where COMMAND is one of:
   click [X Y]               left click, after moving there if given
   next-seat                 drive the next seat with the host's input
   reload                    read the config file again
+  screenshot FILE           the seat's view as a PNG, on screen or not
   take-workspace ID         bring a workspace (a floating one, say) to the
                             seat's screen, and go there
   screen-new                add a virtual screen (nothing to see; for tests)
@@ -93,6 +95,8 @@ pub enum Command {
     TakeWorkspace(u64),
     /// A virtual screen (no picture), for tests and off-screen work.
     ScreenNew,
+    /// The seat's view, as a PNG, taken with the next frame.
+    Screenshot(PathBuf),
     /// Unplug and plug back, as if the monitor were.
     ScreenRemove(u32),
     ScreenAdd(u32),
@@ -164,6 +168,12 @@ pub fn parse(line: &str) -> Result<Request, String> {
             [id] => Command::TakeWorkspace(id.parse().map_err(|_| format!("bad workspace id {id}"))?),
             _ => return Err("take-workspace takes a workspace id".into()),
         },
+        "screenshot" => match args {
+            // `wm msg` makes it absolute: wm's working directory isn't the caller's.
+            [path] if Path::new(path).is_absolute() => Command::Screenshot(PathBuf::from(path)),
+            [_] => return Err("screenshot takes an absolute path".into()),
+            _ => return Err("screenshot takes a file".into()),
+        },
         "screen-new" if args.is_empty() => Command::ScreenNew,
         "screen-remove" | "screen-add" => {
             let [id] = args else { return Err(format!("{name} takes a screen number")) };
@@ -218,6 +228,15 @@ fn serve(state: &mut State, mut stream: UnixStream) -> std::io::Result<()> {
             state.subscribe(stream);
             return Ok(());
         }
+        // The reply comes with the next frame.
+        Ok(Request { seat, command: Command::Screenshot(path) }) => match state.seat_index(seat) {
+            Ok(seat) => {
+                stream.set_write_timeout(Some(TIMEOUT))?;
+                state.shots.push(Shot { seat, path, stream });
+                return Ok(());
+            }
+            Err(error) => Err(error),
+        },
         Ok(request) => state.handle_request(request),
         Err(error) => Err(error),
     };
@@ -266,6 +285,14 @@ pub fn client(words: &[String]) -> i32 {
     // Every line until wm closes: one reply, or with `subscribe`, events.
     let result = (|| -> std::io::Result<bool> {
         let mut stream = UnixStream::connect(&path)?;
+        let mut words = words.to_vec();
+        // A screenshot's file, from where `wm msg` runs.
+        if let Some(i) = words.iter().position(|w| w == "screenshot")
+            && let Some(file) = words.get_mut(i + 1)
+            && let Ok(absolute) = std::path::absolute(&*file)
+        {
+            *file = absolute.to_string_lossy().into_owned();
+        }
         writeln!(stream, "{}", words.join(" "))?;
         let mut ok = false;
         let mut out = std::io::stdout();
@@ -289,15 +316,22 @@ pub fn client(words: &[String]) -> i32 {
 }
 
 impl State {
-    pub fn handle_request(&mut self, request: Request) -> Result<Value, String> {
-        let seat = request.seat.unwrap_or(self.seats.active);
+    /// The seat a request names, else the one the host drives.
+    pub fn seat_index(&self, seat: Option<usize>) -> Result<usize, String> {
+        let seat = seat.unwrap_or(self.seats.active);
         if seat >= self.seats.list.len() {
             return Err(format!("no seat {seat}: there are {}", self.seats.list.len()));
         }
+        Ok(seat)
+    }
+
+    pub fn handle_request(&mut self, request: Request) -> Result<Value, String> {
+        let seat = self.seat_index(request.seat)?;
         match request.command {
             Command::Tree => return Ok(self.tree()),
             Command::Help => return Ok(Value::String(HELP.into())),
             Command::Subscribe => return Err("subscribe takes a connection of its own".into()),
+            Command::Screenshot(_) => return Err("screenshot replies with a frame, over a connection of its own".into()),
             Command::Action(action) => self.run(seat, action),
             Command::Pointer(x, y) => self.pointer_motion(seat, (x, y).into(), InputTime::now()),
             Command::TakeWorkspace(id) => self.take_workspace(seat, WorkspaceId(id))?,
