@@ -65,11 +65,12 @@ mise install                                   # Rust, pinned in mise.toml
 | File | What |
 |---|---|
 | `src/main.rs` | startup |
-| `src/lib.rs` | module list, command-line options |
+| `src/lib.rs` | module list, options and the config file |
 | `src/state.rs` | State: seats, screens, workspaces, windows, focus |
 | `src/layout.rs` | columns, per-seat views, `Anim` |
 | `src/ipc.rs` | socket, `wm msg`, `tree`, events |
-| `src/input.rs` | input routing, `Action`, `binding()` (empty on purpose) |
+| `src/input.rs` | input routing, `Action` |
+| `src/bindings.rs`, `config.json` | key combos, default bindings |
 | `src/winit.rs` | nested backend and rendering |
 | `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
 | `src/dmabuf.rs` | linux-dmabuf: formats, deferred imports |
@@ -82,7 +83,7 @@ mise install                                   # Rust, pinned in mise.toml
 Works nested (winit): several seats, per-seat views and animations, focus
 and moves, workspaces made on demand, move-to-workspace, close, screens
 (virtual ones through `screen-new`), unplug and replug, `take-workspace`,
-launch tracking, the control socket with `tree` and `subscribe`. Tests: 43
+launch tracking, the control socket with `tree` and `subscribe`. Tests: 46
 unit plus the e2e run; clippy clean.
 
 Step 1 implementation: explicit `--backend drm` (winit remains the default),
@@ -108,7 +109,18 @@ e2e run checks a Quickshell bar's room and fuzzel's focus; Misu's real bar
 runs in wm, and its `services/Wm.qml` follows `wm msg subscribe` when
 `$WM_SOCK` is set (scroll otherwise). Not yet: layer popups' grabs, a bar
 per seat (one screen's layers are everyone's on it), Misu's `misu-ai-*` and
-the AI dot. Step 3 is next.
+the AI dot.
+
+Step 3: bindings and a config file. `Config::load` takes the defaults
+(`config.json`, compiled in), then the file (`--config`, else
+`~/.config/wm/config.json` if there), then the flags. Keys: `modifier`,
+`seats`, `startup`, `devices`, `bindings`. A binding's value is `wm msg`
+commands joined by `;`, run for the pressing seat (`ipc::parse`, so one
+grammar); `null` unbinds. Matching is exact on Ctrl/Alt/Shift/Super with the
+unshifted keysym. `Mod` is Super on DRM and Alt nested. New commands: `focus
+first|last`, `move-to-workspace N follow`, `reload` (seats and backend stay).
+Misu's own bindings file comes with step 6; what it binds that wm lacks
+(fullscreen, floating, column sizes, `jump`) is step 5. Step 4 is next.
 
 Known and left for now:
 
@@ -136,9 +148,8 @@ Misu's `AGENTS.md`) before the next.
 2. **Layer shell (implemented; nested e2e and the real bar checked)**, so
    Quickshell (the bar, the greeter) and fuzzel run. Then port the bar's
    `services/Wm.qml` to `wm msg subscribe`.
-3. **Key bindings and a config file**: fill `binding()`, read Misu's
-   bindings (Super+n, Super+arrows, …) from a file, plus the options that are
-   flags now.
+3. **Key bindings and a config file (implemented)**: bindings (Super+n,
+   Super+arrows, …) from a file, plus the options that are flags now.
 4. **Drawing an unseen seat**: render a seat's workspace off screen for
    screencopy, so an agent can screenshot its own workspace (what
    `misu-ai-shot` does with scroll).

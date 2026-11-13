@@ -480,6 +480,15 @@ impl State {
         }
     }
 
+    /// Focus the first or last column of `seat`'s workspace.
+    pub fn focus_end(&mut self, seat: usize, last: bool) {
+        let ws = &self.workspaces[&self.seats[seat].workspace];
+        let target = if last { ws.last() } else { ws.first() };
+        if target.is_some() {
+            self.focus(seat, target, true);
+        }
+    }
+
     pub fn move_dir(&mut self, seat: usize, dir: Direction) {
         let now = Instant::now();
         let Some(window) = self.seats[seat].focus.clone() else { return };
@@ -529,8 +538,9 @@ impl State {
         Ok(())
     }
 
-    /// Send `seat`'s focused window to the `index`th workspace of its screen.
-    pub fn move_to_workspace(&mut self, seat: usize, index: usize) {
+    /// Send `seat`'s focused window to the `index`th workspace of its
+    /// screen; with `follow`, the seat goes too, still focused on it.
+    pub fn move_to_workspace(&mut self, seat: usize, index: usize, follow: bool) {
         let Some(window) = self.seats[seat].focus.clone() else { return };
         let Some(from) = self.workspace_of(&window) else { return };
         let Some(target) = self.nth_workspace(seat, index) else { return };
@@ -540,8 +550,25 @@ impl State {
         // Every seat on it moves on to its neighbour; the window waits, unfocused.
         self.remove_window(&window);
         let animate = self.animates_workspace(target);
-        self.ws(target).add(window, None, Instant::now(), animate);
+        self.ws(target).add(window.clone(), None, Instant::now(), animate);
         self.update_activation();
+        if follow {
+            self.go_to(seat, target);
+            self.focus(seat, Some(window), true);
+        }
+    }
+
+    /// Read the config file again: bindings, the modifier and devices
+    /// (seats stay as they are). A broken file changes nothing.
+    pub fn reload(&mut self) {
+        match crate::Config::load(self.config.flags.clone()) {
+            Ok(new) => {
+                let seats = self.config.seats;
+                self.config = crate::Config { seats, backend: self.config.backend, ..new };
+                tracing::info!("config reloaded: {} bindings", self.config.bindings.len());
+            }
+            Err(err) => tracing::warn!("config not reloaded: {err}"),
+        }
     }
 
     /// `seat`'s animations on, off or toggled (None).

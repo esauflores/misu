@@ -15,7 +15,7 @@ use smithay::{
 };
 
 use crate::{
-    Backend, Modifier,
+    Backend,
     layout::Direction,
     state::{LAUNCH_ENV, ScreenId, State},
 };
@@ -28,24 +28,19 @@ pub enum Action {
     Spawn(String),
     Close,
     Focus(Direction),
+    /// The first (false) or last (true) column.
+    FocusEnd(bool),
     Move(Direction),
     Workspace(usize),
-    MoveToWorkspace(usize),
+    /// And, with `true`, go there with it.
+    MoveToWorkspace(usize, bool),
     /// On, off, or toggle (None), for the seat.
     Animations(Option<bool>),
     /// Nested only: send the host's input to the next seat.
     NextSeat,
+    /// Read the config file again (bindings, modifier, devices).
+    Reload,
     Quit,
-}
-
-/// The action bound to `sym` with `mods` held, if any. None are bound yet:
-/// add them here, e.g. `(false, keysyms::KEY_Return) => Action::Spawn("kitty".into())`
-/// in a `match (mods.shift, sym.raw())`. Until then, `wm msg` drives everything.
-pub fn binding(modifier: Modifier, mods: &ModifiersState, _sym: Keysym) -> Option<Action> {
-    if !modifier.held(mods) {
-        return None;
-    }
-    None
 }
 
 /// Keep physical-device motion inside its seat's screen, including tiny modes.
@@ -60,7 +55,7 @@ pub fn virtual_terminal(backend: Backend, mods: &ModifiersState, sym: Keysym) ->
 }
 
 enum KeyboardAction {
-    Run(Action),
+    Run(Vec<Action>),
     ChangeVt(i32),
     Suppress,
 }
@@ -116,7 +111,6 @@ impl State {
 
     /// Returns a requested VT switch for the DRM backend to execute.
     pub fn keyboard_input(&mut self, seat: usize, source: KeyboardSource, keycode: Keycode, key_state: KeyState, time: InputTime) -> Option<i32> {
-        let modifier = self.config.modifier;
         let backend = self.config.backend;
         let keyboard = self.seats[seat].seat.get_keyboard().unwrap();
         let action = keyboard.input_from_source(source, self, keycode, key_state, SERIAL_COUNTER.next_serial(), time, |state, mods, handle| {
@@ -132,15 +126,20 @@ impl State {
                     state.seats[seat].intercepted_keys.insert(keycode);
                     return FilterResult::Intercept(KeyboardAction::ChangeVt(vt));
                 }
-                if let Some(action) = binding(modifier, mods, sym) {
+                if let Some(actions) = state.config.bindings.get(mods, sym) {
+                    let actions = actions.to_vec();
                     state.seats[seat].intercepted_keys.insert(keycode);
-                    return FilterResult::Intercept(KeyboardAction::Run(action));
+                    return FilterResult::Intercept(KeyboardAction::Run(actions));
                 }
             }
             FilterResult::Forward
         });
         match action {
-            Some(KeyboardAction::Run(action)) => self.run(seat, action),
+            Some(KeyboardAction::Run(actions)) => {
+                for action in actions {
+                    self.run(seat, action);
+                }
+            }
             Some(KeyboardAction::ChangeVt(vt)) => return Some(vt),
             _ => {}
         }
@@ -232,15 +231,17 @@ impl State {
                 }
             }
             Action::Focus(dir) => self.focus_dir(seat, dir),
+            Action::FocusEnd(last) => self.focus_end(seat, last),
             Action::Move(dir) => self.move_dir(seat, dir),
             Action::Workspace(index) => self.switch_workspace(seat, index),
-            Action::MoveToWorkspace(index) => self.move_to_workspace(seat, index),
+            Action::MoveToWorkspace(index, follow) => self.move_to_workspace(seat, index, follow),
             Action::Animations(on) => self.set_animations(seat, on),
             Action::NextSeat => {
                 self.seats.active = (self.seats.active + 1) % self.seats.list.len();
                 self.show_active_seat();
                 tracing::info!("host input now drives seat{}", self.seats.active);
             }
+            Action::Reload => self.reload(),
             Action::Quit => self.loop_signal.stop(),
         }
     }

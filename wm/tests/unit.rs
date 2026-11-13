@@ -441,7 +441,11 @@ mod ipc {
         assert_eq!(ok("focus left").command, Command::Action(Action::Focus(Direction::Left)));
         assert_eq!(ok("move right").command, Command::Action(Action::Move(Direction::Right)));
         assert_eq!(ok("workspace 1").command, Command::Action(Action::Workspace(0)));
-        assert_eq!(ok("move-to-workspace 9").command, Command::Action(Action::MoveToWorkspace(8)));
+        assert_eq!(ok("move-to-workspace 9").command, Command::Action(Action::MoveToWorkspace(8, false)));
+        assert_eq!(ok("move-to-workspace 2 follow").command, Command::Action(Action::MoveToWorkspace(1, true)));
+        assert_eq!(ok("focus first").command, Command::Action(Action::FocusEnd(false)));
+        assert_eq!(ok("focus last").command, Command::Action(Action::FocusEnd(true)));
+        assert_eq!(ok("reload").command, Command::Action(Action::Reload));
         assert_eq!(ok("animations off").command, Command::Action(Action::Animations(Some(false))));
         assert_eq!(ok("animations").command, Command::Action(Action::Animations(None)));
         assert_eq!(ok("spawn kitty -e  htop").command, Command::Action(Action::Spawn("kitty -e htop".into())));
@@ -558,7 +562,7 @@ mod events {
 
 mod options {
     use smithay::input::keyboard::{Keysym, ModifiersState, keysyms};
-    use wm::{Backend, Command, Config, Modifier, input::binding};
+    use wm::{Backend, Command, Config, Flags, Modifier, bindings::Bindings, input::Action, layout::Direction};
 
     fn args(s: &str) -> Result<Command, String> {
         Config::from_args(s.split_whitespace().map(String::from))
@@ -571,8 +575,8 @@ mod options {
         assert_eq!(c.modifier, Modifier::Super);
         assert_eq!(c.seats, 3);
         assert_eq!(c.command.as_deref(), Some("kitty"));
-        assert!(matches!(args("--backend drm"), Ok(Command::Run(Config { backend: Backend::Drm, .. }))));
-        assert!(matches!(args("--backend winit"), Ok(Command::Run(Config { backend: Backend::Winit, .. }))));
+        assert!(matches!(args("--backend drm"), Ok(Command::Run(c)) if c.backend == Backend::Drm));
+        assert!(matches!(args("--backend winit"), Ok(Command::Run(c)) if c.backend == Backend::Winit));
         for bad in ["--seats 0", "--seats", "--mod hyper", "--terminal foot", "--what", "--backend", "--backend tty", "--config"] {
             assert!(args(bad).is_err(), "{bad}");
         }
@@ -616,14 +620,77 @@ mod options {
         ModifiersState { alt, logo, shift, ..Default::default() }
     }
 
+    fn sym(raw: u32) -> Keysym {
+        Keysym::new(raw)
+    }
+
+    /// The config `source` with these flags (and no other file).
+    fn load(source: &str, flags: Flags) -> Result<Config, String> {
+        let path = std::env::temp_dir().join(format!("wm-config-{}-{}.json", std::process::id(), source.len()));
+        std::fs::write(&path, source).unwrap();
+        let config = Config::load(Flags { config: Some(path.clone()), ..flags });
+        std::fs::remove_file(&path).unwrap();
+        config
+    }
+
     #[test]
-    fn no_bindings_yet() {
-        // Every key goes to the client, with the modifier or without.
-        for m in [mods(true, false, false), mods(true, false, true), mods(false, false, false)] {
-            for sym in [keysyms::KEY_Return, keysyms::KEY_Left, keysyms::KEY_3, keysyms::KEY_q] {
-                assert_eq!(binding(Modifier::Alt, &m, Keysym::new(sym)), None);
-            }
+    fn default_bindings() {
+        // Nested, Mod is Alt (the host keeps Super); on real hardware, Super.
+        let c = Config::default();
+        assert_eq!(c.modifier, Modifier::Alt);
+        let b = &c.bindings;
+        assert_eq!(b.get(&mods(true, false, false), sym(keysyms::KEY_Return)), Some(&[Action::Spawn("kitty".into())][..]));
+        assert_eq!(b.get(&mods(true, false, false), sym(keysyms::KEY_Left)), Some(&[Action::Focus(Direction::Left)][..]));
+        // Shift+3 comes unshifted, as 3.
+        assert_eq!(b.get(&mods(true, false, true), sym(keysyms::KEY_3)), Some(&[Action::MoveToWorkspace(2, true)][..]));
+        // Other modifiers, or none, go to the client.
+        assert_eq!(b.get(&mods(false, true, false), sym(keysyms::KEY_Return)), None);
+        assert_eq!(b.get(&mods(false, false, false), sym(keysyms::KEY_Return)), None);
+        assert_eq!(b.get(&ModifiersState { alt: true, ctrl: true, ..Default::default() }, sym(keysyms::KEY_Return)), None);
+        let drm = load("{}", Flags { backend: Some(Backend::Drm), ..Default::default() }).unwrap();
+        assert_eq!(drm.modifier, Modifier::Super);
+        assert!(drm.bindings.get(&mods(false, true, false), sym(keysyms::KEY_Return)).is_some());
+    }
+
+    #[test]
+    fn config_file_goes_over_defaults_and_flags_over_it() {
+        let source = r#"{"modifier":"super","seats":3,"startup":["mako"],
+            "bindings":{"Mod+Return":"spawn foot","mod+W":null,"Mod+Shift+q":"close; focus left","Ctrl+Alt+Delete":"quit"}}"#;
+        let c = load(source, Flags::default()).unwrap();
+        assert_eq!((c.modifier, c.seats, c.startup.clone()), (Modifier::Super, 3, vec!["mako".to_string()]));
+        let b = &c.bindings;
+        let sup = mods(false, true, false);
+        assert_eq!(b.get(&sup, sym(keysyms::KEY_Return)), Some(&[Action::Spawn("foot".into())][..]));
+        assert_eq!(b.get(&sup, sym(keysyms::KEY_w)), None, "unbound, whatever the spelling");
+        assert_eq!(b.get(&mods(false, true, true), sym(keysyms::KEY_q)), Some(&[Action::Close, Action::Focus(Direction::Left)][..]));
+        let ctrl_alt = ModifiersState { ctrl: true, alt: true, ..Default::default() };
+        assert_eq!(b.get(&ctrl_alt, sym(keysyms::KEY_Delete)), Some(&[Action::Quit][..]));
+        assert!(b.get(&sup, sym(keysyms::KEY_1)).is_some(), "the defaults stay");
+        // Flags win.
+        let c = load(source, Flags { modifier: Some(Modifier::Alt), seats: Some(1), ..Default::default() }).unwrap();
+        assert_eq!((c.modifier, c.seats), (Modifier::Alt, 1));
+        assert!(c.bindings.get(&mods(true, false, false), sym(keysyms::KEY_Return)).is_some());
+    }
+
+    #[test]
+    fn bad_bindings_are_errors() {
+        for bad in [
+            r#"{"bindings":{"Mod+Nokey":"close"}}"#,
+            r#"{"bindings":{"Hyper+a":"close"}}"#,
+            r#"{"bindings":{"Mod+":"close"}}"#,
+            r#"{"bindings":{"Mod+a":"fly"}}"#,
+            r#"{"bindings":{"Mod+a":"tree"}}"#,
+            r#"{"bindings":{"Mod+a":"seat 1 close"}}"#,
+            r#"{"bindings":{"Mod+a":""}}"#,
+            r#"{"bindings":{"Mod+a":1}}"#,
+            r#"{"bindings":[]}"#,
+            r#"{"modifier":"hyper"}"#,
+            r#"{"seats":0}"#,
+            r#"{"startup":"kitty"}"#,
+        ] {
+            assert!(load(bad, Flags::default()).is_err(), "{bad}");
         }
+        assert!(Bindings::new([("Mod+a", "close;;focus left")], Modifier::Alt).is_ok());
     }
 }
 
@@ -647,18 +714,7 @@ mod input {
     fn keyboards_keep_seats_and_sources_separate() {
         use smithay::{backend::input::{InputTime, KeyState}, input::keyboard::{KeyboardSource, Keysym, keysyms}, reexports::{calloop::EventLoop, wayland_server::Display}};
         use wm::{Backend, Config, state::State};
-        // Give this backend-free State its own socket directory without
-        // changing the environment of parallel tests.
-        if std::env::var_os("WM_TEST_INPUT_CHILD").is_none() {
-            use std::os::unix::fs::PermissionsExt;
-            let runtime = std::env::temp_dir().join(format!("wm-input-{}", std::process::id()));
-            std::fs::create_dir(&runtime).unwrap();
-            std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700)).unwrap();
-            let output = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", "input::keyboards_keep_seats_and_sources_separate", "--nocapture"])
-                .env("WM_TEST_INPUT_CHILD", "1").env("XDG_RUNTIME_DIR", &runtime).output().unwrap();
-            std::fs::remove_dir_all(runtime).unwrap();
-            assert!(output.status.success(), "{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        if !isolated("input::keyboards_keep_seats_and_sources_separate") {
             return;
         }
         let mut event_loop = EventLoop::try_new().unwrap();
@@ -684,6 +740,70 @@ mod input {
         state.config.backend = Backend::Winit;
         for code in [ctrl, alt, f1] { assert_eq!(state.keyboard_input(1, source, code, KeyState::Pressed, time), None); }
         assert!(state.seats[1].intercepted_keys.is_empty());
+    }
+
+    /// Run `test` again in a child with its own socket directory, so a
+    /// backend-free State doesn't change the environment of parallel tests.
+    /// True in the child, which goes on with the test.
+    fn isolated(test: &str) -> bool {
+        if std::env::var_os("WM_TEST_INPUT_CHILD").is_some() {
+            return true;
+        }
+        use std::os::unix::fs::PermissionsExt;
+        let runtime = std::env::temp_dir().join(format!("wm-input-{}-{}", std::process::id(), test.len()));
+        std::fs::create_dir(&runtime).unwrap();
+        std::fs::set_permissions(&runtime, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", test, "--nocapture"])
+            .env("WM_TEST_INPUT_CHILD", "1").env("XDG_RUNTIME_DIR", &runtime).output().unwrap();
+        std::fs::remove_dir_all(runtime).unwrap();
+        assert!(output.status.success(), "{}{}", String::from_utf8_lossy(&output.stdout), String::from_utf8_lossy(&output.stderr));
+        false
+    }
+
+    #[test]
+    fn bindings_run_for_the_pressing_seat() {
+        use smithay::{backend::input::{InputTime, KeyState}, input::keyboard::{KeyboardSource, Keysym, keysyms}, reexports::{calloop::EventLoop, wayland_server::Display}};
+        use wm::{Config, Flags, state::State};
+        if !isolated("input::bindings_run_for_the_pressing_seat") {
+            return;
+        }
+        let path = std::env::temp_dir().join(format!("wm-bindings-{}.json", std::process::id()));
+        std::fs::write(&path, r#"{"bindings":{"Mod+Shift+2":"animations off","Mod+a":"animations toggle"}}"#).unwrap();
+        let config = Config::load(Flags { config: Some(path.clone()), ..Default::default() }).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        let mut event_loop = EventLoop::try_new().unwrap();
+        let mut state = State::new(&mut event_loop, Display::new().unwrap(), config);
+        let keyboard = state.seats[1].seat.get_keyboard().unwrap();
+        let key = |sym| keyboard.keycode_for_keysym(Keysym::new(sym)).unwrap();
+        let (alt, shift, two, a) = (key(keysyms::KEY_Alt_L), key(keysyms::KEY_Shift_L), key(keysyms::KEY_2), key(keysyms::KEY_a));
+        let time = InputTime::from_millis(1);
+        let source = KeyboardSource::MAIN;
+        let press = |state: &mut State, seat, codes: &[_], how| {
+            for &code in codes {
+                state.keyboard_input(seat, source, code, how, time);
+            }
+        };
+        // Alt+Shift+2 (the keyboard gives "at" shifted; the binding still
+        // matches) on seat 1: seat 1's animations go off, seat 0's stay.
+        press(&mut state, 1, &[alt, shift, two], KeyState::Pressed);
+        assert!(!state.seats[1].animate);
+        assert!(state.seats[0].animate);
+        assert!(state.seats[1].intercepted_keys.contains(&two), "the client doesn't get it");
+        press(&mut state, 1, &[two, shift, alt], KeyState::Released);
+        assert!(state.seats[1].intercepted_keys.is_empty());
+        // Without the modifier the key is the client's.
+        press(&mut state, 0, &[a], KeyState::Pressed);
+        assert!(state.seats[0].animate && state.seats[0].intercepted_keys.is_empty());
+        press(&mut state, 0, &[a], KeyState::Released);
+        // With it, a toggle; then reload with no file: the default bindings.
+        press(&mut state, 0, &[alt, a], KeyState::Pressed);
+        assert!(!state.seats[0].animate);
+        press(&mut state, 0, &[a, alt], KeyState::Released);
+        state.config.flags.config = Some(std::path::PathBuf::new());
+        state.reload();
+        press(&mut state, 0, &[alt, a], KeyState::Pressed);
+        assert!(!state.seats[0].animate, "Mod+a isn't bound by default");
     }
 
     #[test]

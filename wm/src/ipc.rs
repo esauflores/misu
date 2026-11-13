@@ -63,13 +63,16 @@ pub const HELP: &str = "[seat N] COMMAND, where COMMAND is one of:
   spawn CMD…                run a command
   close                     close the seat's focused window
   focus left|right          focus the column to the side
+  focus first|last          focus the first or last column
   move left|right           move the focused column
   workspace N               go to workspace N (1-9)
-  move-to-workspace N       send the focused window there
+  move-to-workspace N [follow]
+                            send the focused window there (and go with it)
   animations on|off|toggle  for the seat (they show while it's on screen)
   pointer X Y               move the seat's pointer
   click [X Y]               left click, after moving there if given
   next-seat                 drive the next seat with the host's input
+  reload                    read the config file again
   take-workspace ID         bring a workspace (a floating one, say) to the
                             seat's screen, and go there
   screen-new                add a virtual screen (nothing to see; for tests)
@@ -129,10 +132,17 @@ pub fn parse(line: &str) -> Result<Request, String> {
         "help" => Command::Help,
         "spawn" if !args.is_empty() => Command::Action(Action::Spawn(args.join(" "))),
         "close" => Command::Action(Action::Close),
-        "focus" => Command::Action(Action::Focus(direction(args)?)),
+        "focus" => Command::Action(match args {
+            ["first"] => Action::FocusEnd(false),
+            ["last"] => Action::FocusEnd(true),
+            _ => Action::Focus(direction(args).map_err(|_| "focus takes left, right, first or last".to_string())?),
+        }),
         "move" => Command::Action(Action::Move(direction(args)?)),
         "workspace" => Command::Action(Action::Workspace(workspace(args)?)),
-        "move-to-workspace" => Command::Action(Action::MoveToWorkspace(workspace(args)?)),
+        "move-to-workspace" => Command::Action(match args {
+            [n, "follow"] => Action::MoveToWorkspace(workspace(&[n])?, true),
+            _ => Action::MoveToWorkspace(workspace(args)?, false),
+        }),
         "animations" => Command::Action(Action::Animations(match args {
             ["on"] => Some(true),
             ["off"] => Some(false),
@@ -149,6 +159,7 @@ pub fn parse(line: &str) -> Result<Request, String> {
             _ => return Err("click takes nothing or X Y".into()),
         },
         "next-seat" => Command::Action(Action::NextSeat),
+        "reload" if args.is_empty() => Command::Action(Action::Reload),
         "take-workspace" => match args {
             [id] => Command::TakeWorkspace(id.parse().map_err(|_| format!("bad workspace id {id}"))?),
             _ => return Err("take-workspace takes a workspace id".into()),

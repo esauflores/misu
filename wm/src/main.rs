@@ -3,7 +3,7 @@ use wm::{Command, Config, input::Action, ipc, state::State};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = match Config::from_args(std::env::args().skip(1)) {
-        Ok(Command::Run(config)) => config,
+        Ok(Command::Run(config)) => *config,
         Ok(Command::Msg(words)) => std::process::exit(ipc::client(&words)),
         Err(message) => {
             eprintln!("{message}");
@@ -38,7 +38,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.seats.list.len()
     );
 
-    if let Some(command) = state.config.command.clone() {
+    let startup = state.config.startup.iter().chain(&state.config.command).cloned().collect::<Vec<_>>();
+    for command in startup {
         state.run(0, Action::Spawn(command));
     }
 

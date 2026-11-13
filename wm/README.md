@@ -40,8 +40,33 @@ cargo run -- -c kitty         # opens a window; kitty starts inside it
 cargo run -- --seats 3 --mod super
 ```
 
-There are no key bindings yet; add them in `binding()` in `src/input.rs`
-(`--mod` picks their modifier). Until then, drive it with `wm msg` (below).
+Keys are bound in a JSON config file, `~/.config/wm/config.json` (or
+`--config FILE`), over wm's own defaults in [`config.json`](config.json):
+Mod+Return a terminal, Mod+Left/Right focus, Mod+Shift+Left/Right move,
+Mod+1…9 workspaces, Mod+Shift+1…9 take the window there, Mod+Tab the next
+seat (nested), Mod+Ctrl+Shift+R reload. Nothing quits
+wm from the keyboard: `wm msg quit` does. `Mod` is
+Alt nested (the host keeps Super) and Super on a VT; `--mod` or
+`"modifier"` changes it.
+
+```json
+{
+  "modifier": "super",
+  "seats": 2,
+  "startup": ["qs -c misu"],
+  "devices": {"USB Keyboard": 1},
+  "bindings": {
+    "Mod+Return": "spawn foot",
+    "Mod+Shift+q": "close; focus left",
+    "Mod+w": null
+  }
+}
+```
+
+A binding runs `wm msg`'s commands (`;` between them) for the seat whose
+keyboard pressed it; `null` unbinds a default. Keys are xkb keysym names, in
+any case; `Shift+2` is written with `2`. Command-line flags go over the
+file, and `reload` (or Mod+Ctrl+Shift+R) reads it again.
 
 Each seat on the shown workspace has its pointer drawn as a square in its
 colour, and a bar of that colour over the window it has focused. Clicking
@@ -61,18 +86,13 @@ Build dependencies on Arch include `libinput`, `seatd` (libseat), `libdisplay-in
 login with a logind session (or a configured seatd):
 
 ```sh
-wm --backend drm --seats 2 --config devices.json -c kitty
+wm --backend drm -c kitty
 ```
 
-Devices use seat 0 unless their exact libinput name appears in the JSON file:
-
-```json
-{"devices":{"USB Keyboard":1,"USB Mouse":1}}
-```
-
-Names and assigned seats are logged when devices connect; seat indices start
-at zero and must be below `--seats`. There are still no general key bindings:
-use `wm msg` from the terminal. On DRM, Ctrl+Alt+F1 through F12 switch VTs.
+Devices use seat 0 unless their exact libinput name is in the config file's
+`devices` (`{"USB Keyboard":1,"USB Mouse":1}`). Names and assigned seats are
+logged when devices connect; seat indices start at zero and must be below
+the number of seats. On DRM, Ctrl+Alt+F1 through F12 switch VTs.
 Session pause and device removal release held input, and returning to the VT
 restores scanout. Monitor unplug preserves its screen number and workspaces.
 Clients can hand over GPU buffers through linux-dmabuf (as Mesa's EGL does) as
@@ -135,13 +155,14 @@ logs and a screenshot in `target/tmp/e2e/`.
 ## Layout
 
 - `src/main.rs`: starts it; the rest is a library for the tests
-- `src/lib.rs`: the modules, and the command-line options
 - `src/state.rs`: compositor state: seats, screens (their ids, and
   recognising a monitor), workspaces, windows, focus
 - `src/layout.rs`: columns, each seat's view of them, and animated values
   that retarget instead of restarting
 - `src/ipc.rs`: the control socket, `wm msg`, and what `subscribe` hears
-- `src/input.rs`: bindings, input routing, and the actions they run
+- `src/lib.rs` and `config.json`: options, the config file, default bindings
+- `src/bindings.rs`: key combos and the commands they run
+- `src/input.rs`: input routing, and the actions bindings and `wm msg` run
 - `src/winit.rs`: the nested backend and rendering
 - `src/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices
 - `src/layers.rs`: the layer shell: bars and launchers, their room and focus

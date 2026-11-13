@@ -159,6 +159,10 @@ impl<W: Tile> Workspace<W> {
         self.columns.first().map(|c| c.window.clone())
     }
 
+    pub fn last(&self) -> Option<W> {
+        self.columns.last().map(|c| c.window.clone())
+    }
+
     pub fn move_column(&mut self, window: &W, dir: Direction, now: Instant, animate: bool) {
         let Some(index) = self.index_of(window) else { return };
         let other = match dir {

@@ -222,8 +222,12 @@ fn nested_in_headless_scroll() {
     let outer = dir.join("outer.sock");
     let _outer_listener = UnixListener::bind(&outer).unwrap();
     let log = fs::File::create(dir.join("wm.log")).unwrap();
+    let config = dir.join("config.json");
+    fs::write(&config, "{}").unwrap();
     let wm_process = Command::new(env!("CARGO_BIN_EXE_wm"))
-        .args(["--backend", "winit", "--seats", "2"])
+        // Its own empty config: the default bindings, whatever ~/.config has.
+        .args(["--backend", "winit", "--seats", "2", "--config"])
+        .arg(&config)
         .env("XDG_RUNTIME_DIR", &runtime)
         .env("WAYLAND_DISPLAY", &host_display)
         .env("WM_SOCK", &outer)
@@ -447,6 +451,26 @@ fn nested_in_headless_scroll() {
     assert_eq!(tree["screens"][2]["seat"], 1);
     assert_eq!(tree["screens"][2]["workspaces"], serde_json::json!([own]));
     assert_eq!((seat(&tree, 0)["shown"].as_bool(), seat(&tree, 1)["shown"].as_bool()), (Some(true), Some(true)));
+
+    // Seat 0 jumps to its workspace's first and last windows, then takes
+    // the last one to workspace 4 and goes with it, still focused on it.
+    let own_windows = |tree: &Value| -> Vec<u64> {
+        let ws = seat(tree, 0)["workspace"].clone();
+        let ws = tree["workspaces"].as_array().unwrap().iter().find(|w| w["id"] == ws).unwrap();
+        ws["windows"].as_array().unwrap().iter().map(|w| w["id"].as_u64().unwrap()).collect()
+    };
+    let list = own_windows(&wm.tree());
+    assert!(list.len() >= 2, "seat 0 has windows: {list:?}");
+    wm.msg("seat 0 focus first");
+    assert_eq!(focus(&wm.tree(), 0), Some(list[0]));
+    wm.msg("seat 0 focus last");
+    let last = *list.last().unwrap();
+    assert_eq!(focus(&wm.tree(), 0), Some(last));
+    wm.msg("seat 0 move-to-workspace 4 follow");
+    let tree = wm.tree();
+    assert_eq!(seat(&tree, 0)["number"], 4);
+    assert_eq!(focus(&tree, 0), Some(last));
+    assert_eq!(own_windows(&tree), vec![last]);
 
     // Errors come back as errors.
     let reply = wm.try_msg("seat 7 focus left").unwrap();
