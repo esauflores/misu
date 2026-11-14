@@ -408,7 +408,9 @@ fn nested_in_headless_scroll() {
     let tree = wm.tree();
     assert_eq!(number(&tree, 0), 3);
     assert_eq!(focus(&tree, 0), Some(ids[1]));
+    // Back, it has the window it left there, not the workspace's first.
     wm.msg("seat 0 workspace 1");
+    assert_eq!(focus(&wm.tree(), 0), Some(ids[2]));
 
     // Closing seat 1's window hands seat 1 a neighbour.
     wm.msg("seat 1 close");

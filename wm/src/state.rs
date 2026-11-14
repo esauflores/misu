@@ -785,10 +785,17 @@ impl State {
     /// Put `seat` on `target`. A screen it looks at shows it there; leaving
     /// for another screen, it looks at that one if nobody does.
     pub(crate) fn go_to(&mut self, seat: usize, target: WorkspaceId) {
-        self.seats[seat].workspace = target;
+        if let Some(window) = self.seats[seat].focus.clone()
+            && let Some(from) = self.workspace_of(&window)
+        {
+            self.seats.list[seat].left.insert(from, window);
+        }
+        let back = self.seats.list[seat].left.remove(&target);
+        self.seats.list[seat].workspace = target;
         self.settle_viewers();
         let ws = &self.workspaces[&target];
-        let focus = self.seats[seat].focus.clone().filter(|w| ws.contains(w)).or_else(|| ws.first());
+        // The window it had there, if it is still there; else the first.
+        let focus = [self.seats[seat].focus.clone(), back].into_iter().flatten().find(|w| ws.contains(w)).or_else(|| ws.first());
         self.focus(seat, focus, false);
     }
 
@@ -981,6 +988,8 @@ pub struct SeatData {
     pub focus: Option<Window>,
     /// The window it focused before `focus` (`focus previous` goes back).
     pub previous: Option<Window>,
+    /// The window it had focused on each workspace it left, to come back to.
+    pub left: HashMap<WorkspaceId, Window>,
     /// A layer surface with its keyboard instead of `focus` (fuzzel, say).
     pub layer_focus: Option<LayerSurface>,
     /// The menu (popup grab) holding its pointer and keyboard.
@@ -1016,6 +1025,7 @@ impl Seats {
             workspace,
             focus: None,
             previous: None,
+            left: HashMap::new(),
             layer_focus: None,
             menu: None,
             animate: true,
