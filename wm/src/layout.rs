@@ -27,6 +27,25 @@ pub const GAP: i32 = 12;
 /// window per screen, scrolled between.
 pub const DEFAULT_WIDTH: f64 = 1.0;
 
+/// Whether `app_id` is a Chromium extension's window (Brave's Bitwarden
+/// popup): `<browser>-<id>-<profile>`, the id 32 letters from a to p.
+pub fn extension_window(app_id: &str) -> bool {
+    app_id.split('-').any(|part| part.len() == 32 && part.bytes().all(|b| (b'a'..=b'p').contains(&b)))
+}
+
+/// Whether a window's size range (`min`, `max`; 0 for no limit) is one fixed
+/// size: a dialog (polkit's prompt), floated even without a parent.
+pub fn fixed_size(min: Size<i32, Logical>, max: Size<i32, Logical>) -> bool {
+    min.w > 0 && min.h > 0 && min == max
+}
+
+/// A dialog's size: 3/4 of the screen's area each way, within the size range
+/// it allows (`min`, `max`; 0 for no limit), so a fixed-size one keeps its own.
+pub fn dialog_size(area: Size<i32, Logical>, min: Size<i32, Logical>, max: Size<i32, Logical>) -> Size<i32, Logical> {
+    let fit = |want: i32, min: i32, max: i32| if max > 0 { want.min(max) } else { want }.max(min);
+    (fit(area.w * 3 / 4, min.w, max.w), fit(area.h * 3 / 4, min.h, max.h)).into()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Direction {
     Left,

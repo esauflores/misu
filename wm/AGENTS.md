@@ -3,8 +3,8 @@
 wm is a scrolling Wayland compositor in Rust on smithay, written to replace
 scroll (sway-scroll) in Misu (`/opt/misu`). scroll has one global
 `animations_enable`, and another seat refocusing restarts its animations, so
-several seats and animations don't work together there; Misu's `misu-ai-*`
-scripts are a pile of workarounds for that. wm is built around both: several
+several seats and animations don't work together there; Misu's old `misu-ai-*`
+scripts needed workarounds for that. wm is built around both: several
 seats, so several people (or agents) can work at once, with animations per
 seat.
 
@@ -44,10 +44,14 @@ mise install                                   # Rust, pinned in mise.toml
   restarts.
 - **Columns are as wide as the screen** (`DEFAULT_WIDTH` 1.0): one app per
   screen, scrolled between. A toplevel with a parent (xdg `set_parent`: a
-  dialog) floats centred over it at its own size (`Workspace::floats`),
+  dialog) floats centred over it at 3/4 of the screen each way, within
+  the size range it allows (`layout::dialog_size`; `Workspace::floats`),
   follows it in every seat's view, and gives focus back to it on close.
-  Apps opened by other apps still tile; floating them too was option 2,
-  left for now.
+  A toplevel without a parent but with one fixed size (min == max:
+  polkit's prompt) floats too, centred on its seat's screen at that size
+  (`layout::fixed_size`), and so does a Chromium extension's window
+  (`layout::extension_window`: Brave's Bitwarden popup). Other apps opened
+  by apps still tile.
 - **Full screen** is a column's: its window takes the whole screen
   (`Workspace::screen`, not the area the bar leaves) from the screen's
   corner when a view has the column at its edge, and the column's room is
@@ -141,10 +145,9 @@ in `Workspace::positions`/`targets`). Keyboard focus for them is per seat
 (`SeatData::layer_focus`): `Exclusive` (fuzzel) goes to the launching seat
 and survives clicks on windows; `OnDemand` goes to the clicking seat. The
 e2e run checks a Quickshell bar's room and fuzzel's focus; Misu's real bar
-runs in wm, and its `services/Wm.qml` follows `wm msg subscribe` when
-`$WM_SOCK` is set (scroll otherwise). Not yet: layer popups' grabs, a bar
-per seat (one screen's layers are everyone's on it), Misu's `misu-ai-*` and
-the AI dot.
+runs in wm, and its `services/Wm.qml` follows `wm msg subscribe`. Misu's command wrappers
+now use native seats; the AI dot and pointer overlay are removed. A bar
+per seat is not implemented (one screen's layers are everyone's on it).
 
 Step 3: bindings and a config file. `Config::load` takes the defaults
 (`config.json`, compiled in), then the file (`--config`, else
@@ -154,8 +157,8 @@ commands joined by `;`, run for the pressing seat (`ipc::parse`, so one
 grammar); `null` unbinds. Matching is exact on Ctrl/Alt/Shift/Super with the
 unshifted keysym. `Mod` is Super on DRM and Alt nested. New commands: `focus
 first|last`, `move-to-workspace N follow`, `reload` (seats and backend stay).
-Misu's own bindings file comes with step 6; what it binds that wm lacks
-(floating, column sizes, `jump`) is step 5.
+Misu's own bindings are in the parent modules/wm/config.json. Unsupported
+actions (floating toggle, column sizes, jump and overview) are omitted.
 
 Step 4: `wm msg seat N screenshot FILE` draws seat N's own view (its
 scroll position, its pointer and borders, its screen's layer surfaces) into an
@@ -177,8 +180,9 @@ are drawn with the backend's next frame into shm (BGRA from a GL
 readback; no dma-buf targets yet) once something changed (a damage
 tracker per session); a resize sends new constraints and fails the
 frame. The e2e run checks `grim -o` against seat 0's screenshot and
-`grim -T` on seat 1's unseen window. Screen sharing through the portal
-is unchecked: it needs the session's portal setup (step 6).
+`grim -T` on seat 1's unseen window. Screen sharing is checked in Misu's
+VM: both the bar picker and the fullscreen fuzzel fallback deliver a real
+PipeWire frame. Use upstream portal 0.9; 0.8.4 overlaps initial frames.
 Full screen (above): `wm msg fullscreen [on|off|toggle]`, `Mod+f`, and
 xdg `set_fullscreen` (before the window shows too); the e2e run covers
 the test bar and clicks through where it was.
@@ -193,7 +197,21 @@ index, also the pointers'), else `colors.inactive`; none when full screen.
 Each border goes just before its window in the elements, so a window over
 it (full screen, a dialog) covers it. They replaced the focus marks.
 `colors` is a config key (defaults in `config.json`); `reload` applies it.
-Rounded corners and shadows (Misu's scroll look) need shaders: later.
+Rounded corners (`RADIUS`, 8 px, Misu's scroll look): a window's own
+surfaces are drawn through a texture shader that cuts them to its
+geometry (`Rounded`, opaque regions less the corners), and the border is
+a ring from a pixel shader (cached per window while its place and colour
+hold); popups aren't cut, full-screen windows are square. Shaders are
+compiled once per renderer; if they fail, square and borderless. The e2e
+run checks a corner is cut. Shadows: not yet.
+wp_fractional_scale (`handlers.rs`): every surface's preferred scale is
+1, as wm draws at 1×. Chromium needs it for a forced scale below 1 (Misu's
+Brave at 0.9): without it, it drew a buffer that much smaller into its
+window's corner; with it, it sizes the buffer to the window (wp_viewporter)
+and lays out smaller inside. The e2e run checks Chromium's page reaches its
+window's corner (helium-browser, brave-origin or chromium).
+Opening: a window fades in and grows from 90% over `DURATION` from its
+`MappedAt`, for a viewer that `animates` (`shot.rs`, `opening`).
 Step 6, phase 1 (wm usable day to day, nested-tested like step 5; then
 Misu moves over, replacing scroll, no second session; wm built with cargo
 by Misu's install.sh):
@@ -207,6 +225,10 @@ by Misu's install.sh):
   tinted their colour (white × colour; the outline stays black); an app's
   own surface can't be. Nested, the host's cursor is hidden over the
   window. The e2e run checks seat 1's red arrow over the gap.
+  Another seat's pointer is drawn once that seat has moved or clicked it
+  (`SeatData::pointer_used`), so an idle seat (the agent's, parked at 0,0
+  on its workspace) leaves no arrow; a seat always sees its own. The e2e
+  run checks seat 1's unused pointer is absent from seat 0's view.
 - Input settings (done): `Config::input` (`settings.rs`), defaults in
   `config.json`, the file's keys over them. Keyboards get the xkb config
   and repeat when seats are made (`Seats::add`; an unknown layout falls
@@ -281,7 +303,8 @@ by Misu's install.sh):
   arriving with the release in one batch, GTK ignores. `scroll` sends
   wheel notches (15 px, v120). `focus-window` = `activate`. The e2e run
   drives a GTK app as seat 1 through each.
-- Phase 1 is done (config includes dropped: no dictate module). Later: gamma
+- Phase 1 is done (no config includes; Misu guards its dictate binding by
+  command availability). Later: gamma
   (`wlr-gamma-control`, for wlsunset; not needed yet).
 XWayland: through xwayland-satellite (Arch `extra`), not Smithay's X11
 WM: each X11 window arrives as an xdg toplevel of satellite's own
@@ -297,8 +320,7 @@ input reaches them. Satellite connects at once, so X11 apps started in
 the first moments may miss it (niri hands satellite pre-bound sockets
 instead; not done). The e2e run opens GTK on its X11 backend with a
 transient dialog, and fails if satellite is installed but not serving.
-Step 5 is done but for rounded corners and shadows, and screen sharing
-through the portal (needs step 6's session).
+Step 5 is done but for shadows.
 
 Known and left for now:
 
@@ -334,11 +356,11 @@ Misu's `AGENTS.md`) before the next.
 5. **Screencopy and portals** (`ext-image-copy-capture`, implemented;
    xdg-desktop-portal-wlr) for grim and screen sharing;
    popup grabs per seat (implemented); server-side decorations (borders
-   implemented; rounded corners and shadows later); XWayland (implemented,
+   implemented, rounded; shadows later); XWayland (implemented,
    through xwayland-satellite);
    full screen (implemented).
-6. **Port Misu**: the session entry (`misu-session`), the `misu-ai-*`
-   scripts to `wm msg seat N …` (most of their workarounds go away), the
-   pointer plugin to wm's own seat pointers, and a `wm` module in place of
-   scroll's (with `xwayland-satellite` among its packages, and Misu's
-   palette written to wm's `colors`).
+6. **Port Misu**: integration now lives in the parent `modules/wm/`, with
+   cargo installation, the DRM session, independent-seat command wrappers,
+   wm/foot matugen palettes and direct bar subscriptions. The pointer/helper
+   plugins, virtual workspace machinery and nightlight are removed. Unsupported
+   bindings stay omitted; see the parent AGENTS.md for VM validation.

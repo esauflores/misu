@@ -18,13 +18,13 @@ use smithay::{
             Bind, ExportMem, Offscreen,
             damage::OutputDamageTracker,
             element::{
-                AsRenderElements, memory::MemoryRenderBufferRenderElement, solid::SolidColorRenderElement,
-                surface::WaylandSurfaceRenderElement,
+                AsRenderElements, memory::MemoryRenderBufferRenderElement, surface::WaylandSurfaceRenderElement,
+                utils::RescaleRenderElement,
             },
             gles::{GlesRenderer, GlesTexture},
         },
     },
-    desktop::layer_map_for_output,
+    desktop::{Window, layer_map_for_output},
     utils::{Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::shell::wlr_layer::Layer,
 };
@@ -32,14 +32,19 @@ use smithay::{
 use crate::{
     backend::BACKGROUND,
     ipc::reply,
+    layout::DURATION,
+    protocols::{
+        activation::MappedAt,
+        decorations::{WindowElement, window_surfaces},
+    },
     state::{NOBODY, ScreenId, State, WorkspaceId},
 };
 
 smithay::backend::renderer::element::render_elements! {
     pub ShotElement<=GlesRenderer>;
-    Overlay=SolidColorRenderElement,
     Surface=WaylandSurfaceRenderElement<GlesRenderer>,
     Cursor=MemoryRenderBufferRenderElement<GlesRenderer>,
+    Window=RescaleRenderElement<WindowElement>,
 }
 
 /// A screenshot asked for, and who waits for it.
@@ -141,9 +146,8 @@ impl State {
     }
 
     /// The windows of `ws` and their borders as `viewer` sees them, `dy`
-    /// lower.
+    /// lower; one that just opened fades in and grows to its size.
     fn window_elements(&mut self, renderer: &mut GlesRenderer, ws: WorkspaceId, viewer: usize, dy: i32, covered: bool, now: Instant) -> Vec<ShotElement> {
-        let scale = Scale::from(1.0);
         let mut elements = Vec::new();
         let workspace = &self.workspaces[&ws];
         let placed: Vec<_> = workspace
@@ -154,18 +158,36 @@ impl State {
             .filter(|(w, _)| !covered || workspace.is_fullscreen(w) || workspace.is_floating(w))
             .map(|(w, p)| (w.clone(), p + Point::from((0, dy))))
             .collect();
+        // Only for someone looking (`State::animates`).
+        let animate = viewer < self.seats.list.len() && self.animates(viewer);
         for (window, loc) in placed.into_iter().rev() {
-            // Its border, then it: a window over it (a full-screen one, a
-            // dialog) covers both.
             let fullscreen = self.workspaces[&ws].is_fullscreen(&window);
-            elements.extend(self.border_of(&window, loc, fullscreen).into_iter().map(ShotElement::Overlay));
-            let at = (loc - window.geometry().loc).to_physical(1);
-            elements.extend(
-                window.render_elements::<WaylandSurfaceRenderElement<_>>(renderer, at, scale, 1.0).into_iter().map(ShotElement::Surface),
-            );
+            let geo = Rectangle::new(loc, window.geometry().size);
+            let opened = if animate { opening(&window, now) } else { 1.0 };
+            let alpha = opened as f32;
+            let origin = (geo.loc + Point::from((geo.size.w / 2, geo.size.h / 2))).to_physical(1);
+            let grow = |e| ShotElement::Window(RescaleRenderElement::from_element(e, origin, OPEN_SCALE + (1.0 - OPEN_SCALE) * opened));
+            // Its menus, its border, then it: a window over it (a
+            // full-screen one, a dialog) covers all of them.
+            let (popups, own) = window_surfaces(renderer, &window, geo, alpha, fullscreen);
+            elements.extend(popups.into_iter().map(grow));
+            if !fullscreen {
+                elements.extend(self.border_of(renderer, &window, loc, alpha).map(|b| grow(WindowElement::Border(b))));
+            }
+            elements.extend(own.into_iter().map(grow));
         }
         elements
     }
+}
+
+/// How small a window starts as it opens.
+const OPEN_SCALE: f64 = 0.9;
+
+/// How far `window` is through opening: 0 just mapped, 1 open (eased out).
+fn opening(window: &Window, now: Instant) -> f64 {
+    let Some(mapped) = window.user_data().get::<MappedAt>() else { return 1.0 };
+    let t = (now.saturating_duration_since(mapped.0).as_secs_f64() / DURATION.as_secs_f64()).min(1.0);
+    1.0 - (1.0 - t).powi(3)
 }
 
 /// `elements` drawn off screen at `size`: RGBA rows, top first.

@@ -15,7 +15,8 @@ use smithay::{
     },
     reexports::{
         wayland_server::{
-            Client, DisplayHandle, Resource,
+            Client, DataInit, Dispatch, DisplayHandle, GlobalDispatch, New, Resource,
+            backend::ClientId,
             protocol::{wl_buffer, wl_output::WlOutput, wl_seat, wl_surface::WlSurface},
         },
     },
@@ -173,6 +174,7 @@ impl CompositorHandler for State {
             } else if let Some(window) = self.window_for_surface(&root) {
                 window.on_commit();
                 self.update_toplevel(&window);
+                self.size_dialog(&window);
                 if !is_mapped(&root) {
                     // A null buffer unmaps it: out of the layout until it
                     // shows something again, after a new initial configure.
@@ -204,6 +206,18 @@ impl ShmHandler for State {
 impl XdgShellHandler for State {
     fn xdg_shell_state(&mut self) -> &mut XdgShellState {
         &mut self.xdg_shell_state
+    }
+
+    // A window that shows already and gets a parent (a portal's dialog,
+    // through xdg-foreign) becomes that parent's dialog.
+    fn parent_changed(&mut self, surface: ToplevelSurface) {
+        if let Some(window) = self.window_for_surface(surface.wl_surface())
+            && self.parent_of(&window).is_some()
+            && self.workspace_of(&window).is_some_and(|ws| !self.workspaces[&ws].is_floating(&window))
+        {
+            self.remove_window(&window);
+            self.add_window(window);
+        }
     }
 
     // It joins the layout with its first buffer (see `commit`).
@@ -313,7 +327,82 @@ impl State {
     }
 }
 
-smithay::delegate_dispatch2!(State);
+/// Every surface draws at 1×, as wm renders.
+impl smithay::wayland::fractional_scale::FractionalScaleHandler for State {
+    fn new_fractional_scale(&mut self, surface: WlSurface) {
+        smithay::wayland::compositor::with_states(&surface, |states| {
+            smithay::wayland::fractional_scale::with_fractional_scale(states, |scale| scale.set_preferred_scale(1.0));
+        });
+    }
+}
+
+impl smithay::wayland::xdg_foreign::XdgForeignHandler for State {
+    fn xdg_foreign_state(&mut self) -> &mut smithay::wayland::xdg_foreign::XdgForeignState {
+        &mut self.foreign
+    }
+}
+
+// smithay's `delegate_dispatch2!`, expanded so `can_view` can also hide a
+// seat: a client one seat launched sees only that seat's wl_seat. Apps that
+// keep a single seat (Zed keeps the last, Electron and kitty the first) then
+// get their own seat's input, whatever the order.
+impl<I, U> Dispatch<I, U> for State
+where
+    I: Resource,
+    U: smithay::wayland::Dispatch2<I, State>,
+{
+    fn request(
+        state: &mut Self,
+        client: &Client,
+        resource: &I,
+        request: I::Request,
+        data: &U,
+        dhandle: &DisplayHandle,
+        data_init: &mut DataInit<'_, Self>,
+    ) {
+        data.request(state, client, resource, request, dhandle, data_init);
+    }
+
+    fn destroyed(state: &mut Self, client: ClientId, resource: &I, data: &U) {
+        data.destroyed(state, client, resource);
+    }
+}
+
+impl<I, U> GlobalDispatch<I, U> for State
+where
+    I: Resource,
+    U: smithay::wayland::GlobalDispatch2<I, State> + 'static,
+{
+    fn bind(
+        state: &mut Self,
+        dhandle: &DisplayHandle,
+        client: &Client,
+        resource: New<I>,
+        data: &U,
+        data_init: &mut DataInit<'_, Self>,
+    ) {
+        data.bind(state, dhandle, client, resource, data_init);
+    }
+
+    fn can_view(client: Client, data: &U) -> bool {
+        data.can_view(&client) && seat_visible(&client, data)
+    }
+}
+
+/// Whether `data`, if a wl_seat global's, is for the seat that launched
+/// `client` (any seat, for a client none launched). smithay keeps a seat
+/// global's seat private but prints its name, `seat<N>` (see `Seats::add`).
+fn seat_visible<U: 'static>(client: &Client, data: &U) -> bool {
+    let Some(seat) = (data as &dyn std::any::Any).downcast_ref::<smithay::wayland::seat::SeatGlobalData<State>>() else {
+        return true;
+    };
+    let Some(Some(home)) = client.get_data::<ClientState>().and_then(|c| c.seat.get()).copied() else {
+        return true;
+    };
+    let debug = format!("{seat:?}");
+    let index = debug.split_once("name: \"seat").and_then(|(_, rest)| rest[..rest.find('"')?].parse::<usize>().ok());
+    index.is_none_or(|index| index == home)
+}
 
 // The clipboard and the primary selection (select, then middle-click),
 // each seat's own: what one seat copies, another doesn't paste. Clipboard

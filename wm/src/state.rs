@@ -106,6 +106,10 @@ pub struct State {
     /// Kept alive for its global: clients scale and crop their buffers
     /// (xwayland-satellite needs it).
     pub _viewporter: smithay::wayland::viewporter::ViewporterState,
+    /// wp_fractional_scale: every surface's preferred scale is 1 (wm draws
+    /// at 1×). Chromium needs it to draw a forced scale (Brave at 0.9) over
+    /// its whole window, through wp_viewporter.
+    pub _fractional_scale: smithay::wayland::fractional_scale::FractionalScaleManagerState,
     /// X11 apps' display (`:N`), while xwayland-satellite serves one.
     pub xwayland: Option<String>,
     /// Bumped when the input settings may have changed (`reload`): the
@@ -135,6 +139,10 @@ pub struct State {
     pub data_device_state: DataDeviceState,
     /// xdg-activation tokens (see `activation.rs`).
     pub activation: smithay::wayland::xdg_activation::XdgActivationState,
+    /// xdg-foreign: a portal's dialog (a file chooser) set over the app's
+    /// window that asked for it, which makes it a dialog here (see
+    /// `parent_of`).
+    pub foreign: smithay::wayland::xdg_foreign::XdgForeignState,
     /// Idle notify, per seat (see `handlers.rs`).
     pub idle: smithay::wayland::idle_notify::IdleNotifierState<Self>,
     /// Primary selection and data control (see `handlers.rs`).
@@ -172,6 +180,7 @@ impl State {
             locked: None,
             _cursor_shape: smithay::wayland::cursor_shape::CursorShapeManagerState::new::<Self>(&dh),
             _viewporter: smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh),
+            _fractional_scale: smithay::wayland::fractional_scale::FractionalScaleManagerState::new::<Self>(&dh),
             compositor_state: CompositorState::new::<Self>(&dh),
             xdg_shell_state: XdgShellState::new::<Self>(&dh),
             layer_shell_state: WlrLayerShellState::new::<Self>(&dh),
@@ -180,6 +189,7 @@ impl State {
             data_device_state: DataDeviceState::new::<Self>(&dh),
             clipboard: crate::protocols::handlers::Clipboard::new(&dh),
             activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Self>(&dh),
+            foreign: smithay::wayland::xdg_foreign::XdgForeignState::new::<Self>(&dh),
             idle: smithay::wayland::idle_notify::IdleNotifierState::new(&dh, event_loop.handle()),
             popups: PopupManager::default(),
             display_handle: dh.clone(),
@@ -200,8 +210,15 @@ impl State {
         let handle = event_loop.handle();
         handle
             .insert_source(socket, |stream, _, state| {
-                if let Err(err) = state.display_handle.insert_client(stream, Arc::new(ClientState::default())) {
-                    tracing::warn!("client rejected: {err}");
+                match state.display_handle.insert_client(stream, Arc::new(ClientState::default())) {
+                    // Which seat launched it, before it sees any global: a
+                    // client a seat launched sees only that seat's wl_seat.
+                    Ok(client) => {
+                        let pid = client.get_credentials(&state.display_handle).ok().map(|c| c.pid as u32);
+                        let seat = pid.and_then(|pid| state.launcher_of_pid(pid));
+                        let _ = client.get_data::<ClientState>().unwrap().seat.set(seat);
+                    }
+                    Err(err) => tracing::warn!("client rejected: {err}"),
                 }
             })
             .expect("socket source");
@@ -524,16 +541,21 @@ impl State {
         window.toplevel().and_then(|t| self.launcher_of(t.wl_surface())).unwrap_or(self.seats.active)
     }
 
-    /// The seat in the environment of `surface`'s client (see `LAUNCH_ENV`).
-    ///
-    /// The client's process, else the nearest of its ancestors, that a seat
-    /// spawned or that has `LAUNCH_ENV`. Both are needed: Chromium-based
-    /// apps (VS Code, Obsidian) overwrite their environment, and `sh -c`
-    /// execs into the command, so wm's own record of the pid it spawned is
-    /// what tells; a process that daemonized has left that tree, and its
-    /// inherited environment tells instead.
+    /// The seat that launched `surface`'s client, recorded as it connected
+    /// (`listen`, through `launcher_of_pid`).
     pub(crate) fn launcher_of(&self, surface: &WlSurface) -> Option<usize> {
-        let mut pid = surface.client()?.get_credentials(&self.display_handle).ok()?.pid as u32;
+        surface.client()?.get_data::<ClientState>()?.seat.get().copied().flatten()
+    }
+
+    /// The seat in the environment of process `pid` (see `LAUNCH_ENV`).
+    ///
+    /// The process, else the nearest of its ancestors, that a seat spawned
+    /// or that has `LAUNCH_ENV`. Both are needed: Chromium-based apps (VS
+    /// Code, Obsidian) overwrite their environment, and `sh -c` execs into
+    /// the command, so wm's own record of the pid it spawned is what tells;
+    /// a process that daemonized has left that tree, and its inherited
+    /// environment tells instead.
+    pub(crate) fn launcher_of_pid(&self, mut pid: u32) -> Option<usize> {
         let ours = std::process::id();
         let prefix = format!("{LAUNCH_ENV}=");
         for _ in 0..32 {
@@ -573,11 +595,15 @@ impl State {
         let now = Instant::now();
         window.user_data().insert_if_missing(|| crate::protocols::activation::MappedAt(now));
         self.list_toplevel(&window);
-        if let Some(parent) = self.parent_of(&window)
-            && let Some(ws) = self.workspace_of(&parent)
-        {
-            self.ws(ws).add_float(window.clone(), Some(&parent));
-            let seat = self.focusing(&parent).next().unwrap_or_else(|| self.home_seat(&window));
+        // A dialog floats: over its parent, else (polkit's prompt, a
+        // browser extension's window) centred on its seat's screen; then
+        // `size_dialog` sizes it.
+        let parent = self.parent_of(&window).filter(|p| self.workspace_of(p).is_some());
+        let seat = parent.as_ref().and_then(|p| self.focusing(p).next()).unwrap_or_else(|| self.home_seat(&window));
+        let ws = parent.as_ref().and_then(|p| self.workspace_of(p)).unwrap_or(self.seats[seat].workspace);
+        if parent.is_some() || lone_dialog(&window) {
+            self.ws(ws).add_float(window.clone(), parent.as_ref());
+            self.size_dialog(&window);
             if self.seats[seat].workspace == ws {
                 self.focus(seat, Some(window), true);
             } else {
@@ -585,8 +611,6 @@ impl State {
             }
             return;
         }
-        let seat = self.home_seat(&window);
-        let ws = self.seats[seat].workspace;
         let after = self.seats[seat].focus.clone().filter(|w| self.workspaces[&ws].contains(w));
         let animate = self.animates_workspace(ws);
         self.ws(ws).add(window.clone(), after.as_ref(), now, animate);
@@ -594,6 +618,24 @@ impl State {
         // Asked for before it showed (see `fullscreen_request`).
         if window.toplevel().is_some_and(|t| t.with_pending_state(|s| s.states.contains(xdg_toplevel::State::Fullscreen))) {
             self.set_fullscreen(&window, Some(true), Some(seat));
+        }
+    }
+
+    /// A dialog takes 3/4 of its screen each way, as far as the size range
+    /// it allows goes (see `layout::dialog_size`).
+    pub fn size_dialog(&self, window: &Window) {
+        let Some(ws) = self.workspace_of(window) else { return };
+        let Some(toplevel) = window.toplevel() else { return };
+        let workspace = &self.workspaces[&ws];
+        if !workspace.is_floating(window) {
+            return;
+        }
+        let (min, max) = size_range(window);
+        let want = crate::layout::dialog_size(workspace.size(), min, max);
+        // Has it, or was asked already and took what it could.
+        if window.geometry().size != want && toplevel.with_pending_state(|s| s.size) != Some(want) {
+            toplevel.with_pending_state(|s| s.size = Some(want));
+            toplevel.send_pending_configure();
         }
     }
 
@@ -970,6 +1012,9 @@ pub fn window_info(window: &Window) -> (Option<String>, Option<String>) {
 #[derive(Default)]
 pub struct ClientState {
     pub compositor_state: CompositorClientState,
+    /// The seat that launched it (see `State::launcher_of`), set as it
+    /// connects; `None` inside: no seat did (systemd, wm itself).
+    pub seat: std::sync::OnceLock<Option<usize>>,
 }
 
 impl ClientData for ClientState {}
@@ -998,6 +1043,9 @@ pub struct SeatData {
     pub animate: bool,
     /// The cursor its pointer shows: what the app under it asks for.
     pub cursor: CursorImageStatus,
+    /// Whether its pointer has moved or clicked yet: until it has, only the
+    /// seat itself sees it, so an idle seat leaves no pointer on screen.
+    pub pointer_used: bool,
 }
 
 #[derive(Default)]
@@ -1030,6 +1078,7 @@ impl Seats {
             menu: None,
             animate: true,
             cursor: CursorImageStatus::default_named(),
+            pointer_used: false,
         });
         index
     }
@@ -1067,6 +1116,23 @@ pub fn identity(make: &str, model: &str, serial: &str, connector: &str, twin: bo
 
 /// A physical connector's stable device path, independent of DRM card numbers.
 pub struct ConnectorId(pub String);
+
+/// The size range a toplevel asks for: its min and max sizes, 0 for no limit.
+fn size_range(window: &Window) -> (Size<i32, Logical>, Size<i32, Logical>) {
+    let Some(toplevel) = window.toplevel() else { return Default::default() };
+    with_states(toplevel.wl_surface(), |states| {
+        let mut cached = states.cached_state.get::<smithay::wayland::shell::xdg::SurfaceCachedState>();
+        let current = cached.current();
+        (current.min_size, current.max_size)
+    })
+}
+
+/// Whether a window with no parent is still a dialog: one fixed size
+/// (polkit's prompt) or a browser extension's window (Bitwarden's popup).
+fn lone_dialog(window: &Window) -> bool {
+    let (min, max) = size_range(window);
+    crate::layout::fixed_size(min, max) || window_info(window).0.is_some_and(|id| crate::layout::extension_window(&id))
+}
 
 /// `pid`'s parent, from `/proc/PID/stat` (after the parenthesised name,
 /// which may hold spaces: state, then the parent).

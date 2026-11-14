@@ -8,7 +8,7 @@
     "inactive": "#121318"
   },
   "bindings": {
-    "Mod+Return": "spawn kitty",
+    "Mod+Return": "spawn foot",
     "Mod+space": "spawn fuzzel",
     "Mod+w": "close",
     "Mod+f": "fullscreen",

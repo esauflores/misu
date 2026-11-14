@@ -52,7 +52,7 @@ wlroots, Hyprland.
 
 ```sh
 mise install                  # Rust, pinned in mise.toml
-cargo run -- -c kitty         # opens a window; kitty starts inside it
+cargo run -- -c foot          # opens a window; foot starts inside it
 cargo run -- --seats 3 --mod super
 ```
 
@@ -134,7 +134,7 @@ Build dependencies on Arch include `libinput`, `seatd` (libseat), `libdisplay-in
 login with a logind session (or a configured seatd):
 
 ```sh
-wm --backend drm -c kitty
+wm --backend drm -c foot
 ```
 
 Devices use seat 0 unless their exact libinput name is in the config file's
@@ -241,6 +241,16 @@ logs and a screenshot in `target/tmp/e2e/`.
 
 ## Next
 
-- Screen sharing checked through the portal, dma-buf capture, a
-  sway-compatible IPC
-- Rounded corners and shadows (Misu's look under scroll)
+- dma-buf capture and a sway-compatible IPC
+- Shadows (Misu's look under scroll; corners are rounded)
+
+Misu's session is installed from `modules/wm/` in the parent checkout. It builds
+this compositor with cargo, starts the DRM backend and supplies Misu's bindings
+and startup commands. foot is the terminal; agent tools use an independent seat.
+Nightlight and unsupported layout actions are left out. See the root AGENTS.md
+for the VM workflow and `modules/wm/config.json` for the desktop configuration.
+
+Screen sharing is VM-checked through the bar picker and the fullscreen fuzzel
+fallback, including delivery of a real PipeWire frame. Misu uses the upstream
+portal package for the initial-frame fix in 0.9 (`test/portal-check.py` in the
+parent checkout).

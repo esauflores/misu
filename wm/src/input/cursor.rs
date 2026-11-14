@@ -134,7 +134,8 @@ fn frame(millis: u32, size: u32, images: &[Image]) -> (usize, &Image) {
 
 impl State {
     /// The pointers of the seats on workspace `shown`, as seat `viewer`
-    /// sees it: each over what it points at in the viewer's view.
+    /// sees it: each over what it points at in the viewer's view. Another
+    /// seat's shows once it has been used.
     pub fn pointers_of(&mut self, renderer: &mut GlesRenderer, shown: WorkspaceId, viewer: usize, now: Instant) -> Vec<ShotElement> {
         let ws = &self.workspaces[&shown];
         let viewer_view = ws.view(viewer, now);
@@ -143,7 +144,7 @@ impl State {
             .list
             .iter()
             .enumerate()
-            .filter(|(_, s)| s.workspace == shown)
+            .filter(|&(i, s)| s.workspace == shown && (i == viewer || s.pointer_used))
             .map(|(i, s)| {
                 let pointer = s.seat.get_pointer().unwrap().current_location();
                 let x = pointer.x + ws.view(i, now) - viewer_view;
@@ -157,7 +158,7 @@ impl State {
     /// are on it, with no view to scroll.
     pub fn screen_pointers(&mut self, renderer: &mut GlesRenderer, id: crate::state::ScreenId) -> Vec<ShotElement> {
         let seats: Vec<(usize, Point<f64, Logical>, CursorImageStatus)> = (0..self.seats.list.len())
-            .filter(|&i| self.screen_for(i) == Some(id))
+            .filter(|&i| self.screen_for(i) == Some(id) && (self.seats[i].pointer_used || self.shown_on(id).and_then(|(_, v)| v) == Some(i)))
             .map(|i| (i, self.seats[i].seat.get_pointer().unwrap().current_location(), self.seats[i].cursor.clone()))
             .collect();
         self.pointer_elements(renderer, seats)

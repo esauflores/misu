@@ -164,6 +164,7 @@ impl State {
     /// (fuzzel) holds it.
     pub fn pointer_moved(&mut self, seat: usize, pos: Point<f64, Logical>, time: InputTime) {
         self.seat_active(seat);
+        self.seats.list[seat].pointer_used = true;
         self.pointer_motion(seat, pos, time);
         let data = &self.seats[seat];
         if !self.config.input.focus_follows_mouse
@@ -202,6 +203,7 @@ impl State {
 
     pub fn pointer_button(&mut self, seat: usize, button: u32, state: ButtonState, time: InputTime) {
         self.seat_active(seat);
+        self.seats.list[seat].pointer_used = true;
         if state == ButtonState::Pressed {
             self.refresh_pointer(seat, time);
         }

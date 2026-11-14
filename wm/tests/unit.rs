@@ -19,7 +19,7 @@ mod layout {
     };
 
     use smithay::utils::{Logical, Rectangle, Size};
-    use wm::layout::{DEFAULT_WIDTH, DURATION, Direction, GAP, Tile, Workspace};
+    use wm::layout::{DEFAULT_WIDTH, DURATION, Direction, GAP, Tile, Workspace, dialog_size, extension_window, fixed_size};
 
     /// A window that remembers the size it was asked to take.
     #[derive(Debug, Clone)]
@@ -362,6 +362,37 @@ mod layout {
         assert!(!ws.set_fullscreen(&windows[1], Some(false), now, false), "already");
         assert_eq!((windows[1].size.get(), windows[1].fullscreen.get()), (Some((width_on(OUT.0 - 40), OUT.1 - 2 * GAP)), false));
         assert!(!ws.covered(ME, now));
+    }
+
+    #[test]
+    fn dialogs_take_three_quarters_within_their_range() {
+        let size = |w, h| Size::<i32, Logical>::from((w, h));
+        let area = size(1316, 768);
+        // No limits: 3/4 each way, a small dialog grown and a big one shrunk alike.
+        assert_eq!(dialog_size(area, size(0, 0), size(0, 0)), size(987, 576));
+        // A minimum past it wins; a maximum under it caps.
+        assert_eq!(dialog_size(area, size(1100, 100), size(0, 0)), size(1100, 576));
+        assert_eq!(dialog_size(area, size(0, 0), size(400, 0)), size(400, 576));
+        // Fixed size (min == max) keeps its own.
+        assert_eq!(dialog_size(area, size(300, 150), size(300, 150)), size(300, 150));
+    }
+
+    #[test]
+    fn fixed_size_windows_are_dialogs() {
+        let size = |w, h| Size::<i32, Logical>::from((w, h));
+        assert!(fixed_size(size(708, 262), size(708, 262)), "polkit's prompt");
+        assert!(!fixed_size(size(0, 0), size(0, 0)), "no limits");
+        assert!(!fixed_size(size(611, 327), size(0, 0)), "a minimum only");
+        assert!(!fixed_size(size(300, 150), size(300, 400)), "a range");
+    }
+
+    #[test]
+    fn extension_windows_are_dialogs() {
+        assert!(extension_window("brave-nngceckbapebfimnlniiiahkandclblb-Default"), "Bitwarden in Brave");
+        assert!(extension_window("chrome-nngceckbapebfimnlniiiahkandclblb-Profile_1"));
+        assert!(!extension_window("brave-origin"));
+        assert!(!extension_window("dev.zed.Zed"));
+        assert!(!extension_window("brave-nngceckbapebfimnlniiiahkandclblz-Default"), "z is not an id letter");
     }
 }
 
@@ -801,7 +832,7 @@ mod options {
         let c = Config::default();
         assert_eq!(c.modifier, Modifier::Alt);
         let b = &c.bindings;
-        assert_eq!(b.get(&mods(true, false, false), sym(keysyms::KEY_Return)), Some(&[Action::Spawn("kitty".into())][..]));
+        assert_eq!(b.get(&mods(true, false, false), sym(keysyms::KEY_Return)), Some(&[Action::Spawn("foot".into())][..]));
         assert_eq!(b.get(&mods(true, false, false), sym(keysyms::KEY_Left)), Some(&[Action::Focus(Direction::Left)][..]));
         // Shift+3 comes unshifted, as 3.
         assert_eq!(b.get(&mods(true, false, true), sym(keysyms::KEY_3)), Some(&[Action::MoveToWorkspace(2, true)][..]));

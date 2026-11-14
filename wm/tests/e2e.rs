@@ -93,6 +93,12 @@ impl Wm {
 }
 
 /// The window titled `title`, on any workspace.
+/// The window seat `s` focuses, as the tree has it.
+fn focused_window(tree: &Value, s: usize) -> Option<Value> {
+    let id = focus(tree, s)?;
+    tree["workspaces"].as_array()?.iter().flat_map(|w| w["windows"].as_array().unwrap()).find(|w| w["id"] == id).cloned()
+}
+
 fn titled(tree: &Value, title: &str) -> Option<Value> {
     tree["workspaces"].as_array()?.iter().flat_map(|ws| ws["windows"].as_array().unwrap().iter()).find(|w| w["title"] == title).cloned()
 }
@@ -337,19 +343,34 @@ fn nested_in_headless_scroll() {
     let beside = at(w - 4, cy as usize);
     let background = [20, 20, 25, 255];
     assert!(beside.iter().zip(background).all(|(&a, b)| a.abs_diff(b) <= 2), "the background beside it: {beside:?}");
+    // Rounded: its very corner (the bottom right: seat 1's pointer is at
+    // the top left) is cut away, border and all.
+    let corner_at = |key: &str, size: &str| (window[key].as_u64().unwrap() + window[size].as_u64().unwrap() - 1) as usize;
+    let corner = at(corner_at("x", "width"), corner_at("y", "height"));
+    assert!(corner.iter().zip(background).all(|(&a, b)| a.abs_diff(b) <= 2), "a rounded corner: {corner:?}");
+    // Until seat 1 uses its pointer, nobody else sees it: it visits seat
+    // 0's workspace, and seat 0 finds no red arrow at the corner.
+    let red_in = |pixels: &[u8], w: usize, xs: std::ops::Range<usize>, ys: std::ops::Range<usize>| {
+        ys.flat_map(|y| xs.clone().map(move |x| (x, y)))
+            .filter(|&(x, y)| {
+                let p = &pixels[(y * w + x) * 4..(y * w + x) * 4 + 3];
+                p[0] > 150 && p[1] < 130 && p[2] < 130
+            })
+            .count()
+    };
+    wm.msg("seat 1 workspace 1");
+    let png = dir.join("idle-pointer.png");
+    wm.msg(&format!("seat 0 screenshot {}", png.display()));
+    let (w0, pixels) = read_png(&png);
+    assert_eq!(red_in(&pixels, w0, 0..10, 0..10), 0, "seat 1's unused pointer isn't drawn for seat 0");
+    wm.msg("seat 1 workspace 2");
     // Seat 1's pointer, over the gap left of its window (no app there):
     // the theme's arrow, tinted seat 1's red, its tip at the pointer.
     wm.msg("seat 1 pointer 4 300");
     let png = dir.join("cursor.png");
     wm.msg(&format!("seat 1 screenshot {}", png.display()));
     let (w1, pixels) = read_png(&png);
-    let red = (300..340)
-        .flat_map(|y| (4..40).map(move |x| (x, y)))
-        .filter(|&(x, y)| {
-            let p = &pixels[(y * w1 + x) * 4..(y * w1 + x) * 4 + 3];
-            p[0] > 150 && p[1] < 130 && p[2] < 130
-        })
-        .count();
+    let red = red_in(&pixels, w1, 4..40, 300..340);
     assert!(red > 10, "seat 1's cursor is drawn in its colour: {red} red pixels");
     wm.msg(&format!("seat 0 screenshot {}", dir.join("seat0.png").display()));
     assert_eq!(read_png(&dir.join("seat0.png")).0, w);
@@ -549,6 +570,7 @@ fn nested_in_headless_scroll() {
     dialog_floats(&wm, &dir);
     menu_grabs(&wm, &dir);
     x11_apps(&wm, &dir);
+    chromium_scale(&wm, &dir);
     clipboards(&wm);
     idle_per_seat(&wm, &dir);
     activation(&wm, &dir);
@@ -913,6 +935,42 @@ fn x11_apps(wm: &Wm, dir: &Path) {
     wait_for("the X11 windows to go", || {
         let tree = wm.tree();
         (titled(&tree, "e2e-x11").is_none() && titled(&tree, "e2e-x11-dialog").is_none()).then_some(())
+    });
+}
+
+/// Chromium with a forced scale below 1 (Misu's Brave at 0.9) fills its
+/// window on Wayland: wp_fractional_scale tells it the surface is at 1×, so
+/// it sizes its buffer to the window and lays out at 0.9 inside. Without it,
+/// it drew a buffer 0.9 the window's size into its corner.
+fn chromium_scale(wm: &Wm, dir: &Path) {
+    let Some(browser) = ["chromium", "helium-browser", "brave-origin"].into_iter().find(|b| on_path(b)) else {
+        eprintln!("Chromium scale: skipped, needs chromium, helium-browser or brave-origin");
+        return;
+    };
+    // Its own config dir: no flags file from the user's (Misu's Brave is on X11).
+    let command = format!(
+        "env XDG_CONFIG_HOME={0}/chromium-config {browser} --user-data-dir={0}/chromium --ozone-platform=wayland \
+         --force-device-scale-factor=0.9 --no-first-run --no-default-browser-check \
+         'data:text/html,<body style=\"background:magenta\">'",
+        dir.display()
+    );
+    let pid = spawn_tracked(wm, 0, dir, "chromium", &command);
+    let png = dir.join("chromium.png");
+    let (window, corner) = wait_for("Chromium's magenta page out to its window's corner", || {
+        let tree = wm.tree();
+        let window = focused_window(&tree, 0).filter(|w| w["app_id"].as_str().is_some_and(|a| a.contains(browser.split('-').next().unwrap())))?;
+        wm.msg(&format!("seat 0 screenshot {}", png.display()));
+        let (w, pixels) = read_png(&png);
+        let (x, y) = ((window["x"].as_u64()? + window["width"].as_u64()? - 10) as usize, (window["y"].as_u64()? + window["height"].as_u64()? - 10) as usize);
+        let corner = pixels[(y * w + x) * 4..(y * w + x) * 4 + 3].to_vec();
+        (corner[0] > 200 && corner[1] < 60 && corner[2] > 200).then_some((window, corner))
+    });
+    eprintln!("Chromium at 0.9 fills {}x{}: {corner:?} at its corner", window["width"], window["height"]);
+    kill(&pid);
+    let id = window["id"].clone();
+    wait_for("Chromium's window to go", || {
+        let tree = wm.tree();
+        (!tree["workspaces"].as_array()?.iter().flat_map(|w| w["windows"].as_array().unwrap()).any(|w| w["id"] == id)).then_some(())
     });
 }
 
