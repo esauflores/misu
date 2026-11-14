@@ -258,7 +258,10 @@ impl State {
                     .spawn();
                 match spawned {
                     // Reaped when it exits, so it leaves no zombie.
-                    Ok(mut child) => drop(std::thread::spawn(move || child.wait())),
+                    Ok(mut child) => {
+                        self.note_spawn(child.id(), seat);
+                        drop(std::thread::spawn(move || child.wait()));
+                    }
                     Err(err) => tracing::warn!("couldn't run {command}: {err}"),
                 }
             }

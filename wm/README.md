@@ -35,7 +35,9 @@ built around several seats on one screen:
   own, made on demand (Mod+5 on a screen with three makes the fourth and fifth).
 - **Windows open where they were launched**: on the workspace of the seat
   whose command started them, which wm marks in the environment
-  (`WM_LAUNCH_SEAT`) its processes inherit, through any double fork. A window
+  (`WM_LAUNCH_SEAT`) its processes inherit, through any double fork, and
+  in the process ids it started (for apps that overwrite their environment,
+  like Chromium-based ones). A window
   joins the layout when it first shows something, and leaves it when it
   unmaps.
 

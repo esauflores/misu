@@ -99,6 +99,8 @@ pub struct State {
     pub events: Events,
     /// Screenshots asked for, taken with the next frame (see `shot.rs`).
     pub shots: Vec<crate::shot::Shot>,
+    /// The processes seats spawned, by pid (see `launcher_of`).
+    spawned: HashMap<u32, usize>,
     /// Capture by other programs (grim, screen sharing): see `capture.rs`.
     pub capture: crate::capture::Capture,
     /// Kept alive for its global: clients scale and crop their buffers
@@ -158,6 +160,7 @@ impl State {
             seats: Seats::default(),
             events: Events::default(),
             shots: Vec::new(),
+            spawned: HashMap::new(),
             capture: crate::capture::Capture::new(&dh),
             decorations: crate::decorations::new_state(&dh),
             xwayland: None,
@@ -490,12 +493,38 @@ impl State {
     }
 
     /// The seat in the environment of `surface`'s client (see `LAUNCH_ENV`).
+    ///
+    /// The client's process, else the nearest of its ancestors, that a seat
+    /// spawned or that has `LAUNCH_ENV`. Both are needed: Chromium-based
+    /// apps (VS Code, Obsidian) overwrite their environment, and `sh -c`
+    /// execs into the command, so wm's own record of the pid it spawned is
+    /// what tells; a process that daemonized has left that tree, and its
+    /// inherited environment tells instead.
     pub(crate) fn launcher_of(&self, surface: &WlSurface) -> Option<usize> {
-        let pid = surface.client()?.get_credentials(&self.display_handle).ok()?.pid;
-        let environ = std::fs::read(format!("/proc/{pid}/environ")).ok()?;
+        let mut pid = surface.client()?.get_credentials(&self.display_handle).ok()?.pid as u32;
+        let ours = std::process::id();
         let prefix = format!("{LAUNCH_ENV}=");
-        let value = environ.split(|&b| b == 0).find_map(|var| var.strip_prefix(prefix.as_bytes()))?;
-        std::str::from_utf8(value).ok()?.parse().ok().filter(|&seat| seat < self.seats.list.len())
+        for _ in 0..32 {
+            if pid <= 1 || pid == ours {
+                return None;
+            }
+            if let Some(&seat) = self.spawned.get(&pid) {
+                return Some(seat).filter(|&s| s < self.seats.list.len());
+            }
+            if let Ok(environ) = std::fs::read(format!("/proc/{pid}/environ"))
+                && let Some(value) = environ.split(|&b| b == 0).find_map(|var| var.strip_prefix(prefix.as_bytes()))
+            {
+                return std::str::from_utf8(value).ok()?.parse().ok().filter(|&seat| seat < self.seats.list.len());
+            }
+            pid = parent_pid(pid)?;
+        }
+        None
+    }
+
+    /// Remember that `seat` spawned `pid`, forgetting ones that have exited.
+    pub(crate) fn note_spawn(&mut self, pid: u32, seat: usize) {
+        self.spawned.retain(|pid, _| std::path::Path::new(&format!("/proc/{pid}")).exists());
+        self.spawned.insert(pid, seat);
     }
 
     /// The window `window`'s app opened it for (a dialog's), if it is in
@@ -991,6 +1020,13 @@ pub fn identity(make: &str, model: &str, serial: &str, connector: &str, twin: bo
 
 /// A physical connector's stable device path, independent of DRM card numbers.
 pub struct ConnectorId(pub String);
+
+/// `pid`'s parent, from `/proc/PID/stat` (after the parenthesised name,
+/// which may hold spaces: state, then the parent).
+fn parent_pid(pid: u32) -> Option<u32> {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    stat.rsplit_once(')')?.1.split_whitespace().nth(1)?.parse().ok()
+}
 
 /// The identity `output` gets, given the screens connected now.
 pub fn identity_of<'a>(output: &Output, connected: impl IntoIterator<Item = &'a Screen>) -> String {

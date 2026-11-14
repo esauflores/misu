@@ -73,9 +73,12 @@ mise install                                   # Rust, pinned in mise.toml
   own `Space`.
 - **Workspaces** have stable ids in one HashMap; each screen holds an ordered
   Vec of ids, made on demand.
-- **Launching**: `spawn` sets `WM_LAUNCH_SEAT`, read back from
-  `/proc/<client pid>/environ`, so a window opens on its launcher's
-  workspace, even through `setsid -f`.
+- **Launching**: `spawn` sets `WM_LAUNCH_SEAT` and notes the child's pid.
+  A new window's client process, or its nearest ancestor (via
+  `/proc/<pid>/stat`), that wm spawned or whose `/proc/<pid>/environ` has
+  the variable names the seat, so a window opens on its launcher's
+  workspace, even through `setsid -f` and in Chromium-based apps, which
+  overwrite their environ.
 - **Control socket** (`$XDG_RUNTIME_DIR/wm.<wayland socket>.sock`, path in
   `$WM_SOCK` for clients): one plain-text line in, one JSON line out.
   `subscribe` keeps the connection and streams events, found by diffing a
