@@ -520,6 +520,7 @@ fn nested_in_headless_scroll() {
     idle_per_seat(&wm, &dir, &runtime);
     activation(&wm, &dir);
     focus_previous(&wm);
+    remote_input(&wm, &dir);
     session_lock(&wm, &dir, &runtime);
 
     // Errors come back as errors.
@@ -1160,4 +1161,107 @@ fn focus_previous(wm: &Wm) {
     wm.msg("seat 0 focus previous");
     let tree = wm.tree();
     assert_eq!((seat(&tree, 0)["workspace"].clone(), focus(&tree, 0)), (home, last));
+}
+
+/// Seat 1, driven only through `wm msg` (as an agent's would be), works a GTK app: typing
+/// in its layout (refusing what it can't type), combos, right and double
+/// clicks, wheel notches, a drag, and going to a window by id.
+fn remote_input(wm: &Wm, dir: &Path) {
+    let gtk = Command::new("python3")
+        .args(["-c", "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk"])
+        .status()
+        .is_ok_and(|s| s.success());
+    if !gtk {
+        eprintln!("agent input: skipped, needs python3 with GTK 4");
+        return;
+    }
+    let out = |name: &str| dir.join(format!("agent-{name}"));
+    let script = dir.join("agent.py");
+    fs::write(
+        &script,
+        format!(
+            r#"import gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk, GLib
+def note(name, text):
+    open({dir:?} + "/agent-" + name, "w").write(str(text))
+Gtk.init()
+window = Gtk.Window(title="e2e-agent")
+box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+entry = Gtk.Entry()
+entry.connect("activate", lambda e: note("entered", e.get_text()))
+area = Gtk.DrawingArea(hexpand=True, vexpand=True)
+click = Gtk.GestureClick(button=0)
+def pressed(gesture, n, x, y):
+    button = gesture.get_current_button()
+    if button == 3: note("right", n)
+    elif button == 1 and n == 2: note("double", n)
+click.connect("pressed", pressed)
+area.add_controller(click)
+scrolled = [0.0]
+scroll = Gtk.EventControllerScroll(flags=Gtk.EventControllerScrollFlags.VERTICAL)
+def scrolling(c, dx, dy):
+    scrolled[0] += dy
+    note("scroll", scrolled[0])
+    return True
+scroll.connect("scroll", scrolling)
+area.add_controller(scroll)
+drag = Gtk.GestureDrag()
+drag.connect("drag-end", lambda g, x, y: note("drag", "%d,%d" % (x, y)))
+area.add_controller(drag)
+box.append(entry)
+box.append(area)
+window.set_child(box)
+window.present()
+GLib.MainLoop().run()
+"#,
+            dir = dir.display().to_string()
+        ),
+    )
+    .unwrap();
+    let find = |tree: &Value| -> Option<Value> {
+        tree["workspaces"].as_array().unwrap().iter()
+            .flat_map(|ws| ws["windows"].as_array().unwrap().iter())
+            .find(|w| w["title"] == "e2e-agent").cloned()
+    };
+    let pid = spawn_tracked(wm, 1, dir, "agent", &format!("env GDK_BACKEND=wayland python3 {}", script.display()));
+    let window = wait_for("the app's window", || find(&wm.tree()));
+    let id = window["id"].as_u64();
+    wait_for("seat 1 on it", || (focus(&wm.tree(), 1) == id).then_some(()));
+    let read = |name: &str| wait_for(name, || fs::read_to_string(out(name)).ok());
+
+    // Typing: a character the layout lacks is refused, and nothing typed.
+    let reply = wm.try_msg("seat 1 type añb").unwrap();
+    assert_eq!(reply["ok"], false, "the us layout can't type ñ: {reply}");
+    wm.msg("seat 1 type Hello, World! (1+1=2) ~_~");
+    wm.msg("seat 1 key Return");
+    assert_eq!(read("entered"), "Hello, World! (1+1=2) ~_~");
+    fs::remove_file(out("entered")).unwrap();
+    wm.msg("seat 1 key ctrl+a");
+    wm.msg("seat 1 type replaced");
+    wm.msg("seat 1 key Return");
+    assert_eq!(read("entered"), "replaced", "ctrl+a selected it all");
+
+    // The pointer, low in the window: the drawing area.
+    let tree = wm.tree();
+    let window = find(&tree).unwrap();
+    let (x, y) = centre(&tree, 1, &window);
+    let y = y + window["height"].as_i64().unwrap() / 4;
+    wm.msg(&format!("seat 1 click right {x} {y}"));
+    assert_eq!(read("right"), "1");
+    wm.msg(&format!("seat 1 double-click {x} {y}"));
+    assert_eq!(read("double"), "2");
+    wm.msg(&format!("seat 1 scroll 0 3 {x} {y}"));
+    wait_for("three notches down", || (fs::read_to_string(out("scroll")).ok()? == "3.0").then_some(()));
+    let _ = fs::remove_file(out("drag"));
+    wm.msg(&format!("seat 1 drag {x} {y} {} {}", x + 50, y + 20));
+    assert_eq!(read("drag"), "50,20");
+
+    // Away to another workspace, and back to the window by its id.
+    wm.msg("seat 1 workspace 7");
+    assert_ne!(focus(&wm.tree(), 1), id);
+    wm.msg(&format!("seat 1 focus-window {}", id.unwrap()));
+    assert_eq!(focus(&wm.tree(), 1), id);
+    assert_eq!(wm.try_msg("seat 1 focus-window 99999").unwrap()["ok"], false);
+    kill(&pid);
 }

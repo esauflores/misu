@@ -39,7 +39,7 @@ use std::{
 
 use serde_json::{Value, json};
 use smithay::{
-    backend::input::{ButtonState, InputTime},
+    backend::input::InputTime,
     desktop::{Window, layer_map_for_output},
     reexports::{
         calloop::{EventLoop, Interest, Mode, PostAction, generic::Generic},
@@ -49,7 +49,7 @@ use smithay::{
 };
 
 use crate::{
-    input::{Action, BTN_LEFT},
+    input::Action,
     layout::Direction,
     shot::Shot,
     state::{FALLBACK_SIZE, Screen, ScreenId, State, WorkspaceId, new_output, window_id, window_info},
@@ -73,7 +73,14 @@ pub const HELP: &str = "[seat N] COMMAND, where COMMAND is one of:
   animations on|off|toggle  for the seat (they show while it's on screen)
   fullscreen [on|off|toggle] the focused window over the whole screen
   pointer X Y               move the seat's pointer
-  click [X Y]               left click, after moving there if given
+  click [left|right|middle] [X Y]
+                            click, after moving there if given
+  double-click [BUTTON] [X Y]
+  drag X1 Y1 X2 Y2          press at one point, move to the other, release
+  scroll DX DY [X Y]        wheel notches (positive: right, down)
+  key COMBO                 press and release a combo, like ctrl+shift+t
+  type TEXT                 type the rest of the line in the seat's layout
+  focus-window ID           go to a window (an id from tree) and focus it
   next-seat                 drive the next seat with the host's input
   reload                    read the config file again
   screenshot FILE           the seat's view as a PNG, on screen or not
@@ -93,7 +100,13 @@ pub enum Command {
     Subscribe,
     Action(Action),
     Pointer(f64, f64),
-    Click(Option<(f64, f64)>),
+    /// A button, where (if given), and how many times.
+    Click(crate::remote::Button, Option<(f64, f64)>, u32),
+    Drag((f64, f64), (f64, f64)),
+    Scroll((f64, f64), Option<(f64, f64)>),
+    Key(String),
+    Type(String),
+    FocusWindow(u64),
     TakeWorkspace(u64),
     /// A virtual screen (no picture), for tests and off-screen work.
     ScreenNew,
@@ -108,6 +121,16 @@ pub enum Command {
 pub struct Request {
     pub seat: Option<usize>,
     pub command: Command,
+}
+
+/// What's left of `line` after its first `words` words and the one space
+/// after them (more spaces are the text's own).
+fn rest_of_line(line: &str, words: usize) -> &str {
+    let mut rest = line.trim_end_matches(['\n', '\r']);
+    for _ in 0..words {
+        rest = rest.trim_start().split_once(char::is_whitespace).map_or("", |(_, r)| r);
+    }
+    rest
 }
 
 pub fn parse(line: &str) -> Result<Request, String> {
@@ -166,10 +189,37 @@ pub fn parse(line: &str) -> Result<Request, String> {
             [x, y] => Command::Pointer(number(x)?, number(y)?),
             _ => return Err("pointer takes X Y".into()),
         },
-        "click" => match args {
-            [] => Command::Click(None),
-            [x, y] => Command::Click(Some((number(x)?, number(y)?))),
-            _ => return Err("click takes nothing or X Y".into()),
+        "click" | "double-click" => {
+            let count = if name == "click" { 1 } else { 2 };
+            let (button, rest) = match args.split_first() {
+                Some((word, rest)) if crate::remote::Button::parse(word).is_some() => (crate::remote::Button::parse(word).unwrap(), rest),
+                _ => (crate::remote::Button::Left, args),
+            };
+            let at = match rest {
+                [] => None,
+                [x, y] => Some((number(x)?, number(y)?)),
+                _ => return Err(format!("{name} takes [left|right|middle] [X Y]")),
+            };
+            Command::Click(button, at, count)
+        }
+        "drag" => match args {
+            [x1, y1, x2, y2] => Command::Drag((number(x1)?, number(y1)?), (number(x2)?, number(y2)?)),
+            _ => return Err("drag takes X1 Y1 X2 Y2".into()),
+        },
+        "scroll" => match args {
+            [dx, dy] => Command::Scroll((number(dx)?, number(dy)?), None),
+            [dx, dy, x, y] => Command::Scroll((number(dx)?, number(dy)?), Some((number(x)?, number(y)?))),
+            _ => return Err("scroll takes DX DY [X Y]".into()),
+        },
+        "key" => match args {
+            [combo] => Command::Key(combo.to_string()),
+            _ => return Err("key takes one combo, like ctrl+shift+t".into()),
+        },
+        // The rest of the line as it is, spaces and all.
+        "type" => Command::Type(rest_of_line(line, if seat.is_some() { 3 } else { 1 }).to_string()),
+        "focus-window" => match args {
+            [id] => Command::FocusWindow(id.parse().map_err(|_| format!("bad window id {id}"))?),
+            _ => return Err("focus-window takes a window id".into()),
         },
         "next-seat" => Command::Action(Action::NextSeat),
         "reload" if args.is_empty() => Command::Action(Action::Reload),
@@ -242,6 +292,21 @@ fn serve(state: &mut State, mut stream: UnixStream) -> std::io::Result<()> {
             Ok(seat) => {
                 stream.set_write_timeout(Some(TIMEOUT))?;
                 state.shots.push(Shot { seat, path, stream });
+                return Ok(());
+            }
+            Err(error) => Err(error),
+        },
+        // The reply comes when the drag is done.
+        Ok(Request { seat, command: Command::Drag(from, to) }) => match state.seat_index(seat) {
+            Ok(_) if state.is_locked() => Err("the session is locked".into()),
+            Ok(seat) => {
+                state.send_drag(seat, from, to, move |result| {
+                    let reply = match result {
+                        Ok(()) => json!({ "ok": true }),
+                        Err(error) => json!({ "ok": false, "error": error }),
+                    };
+                    let _ = writeln!(stream, "{reply}");
+                });
                 return Ok(());
             }
             Err(error) => Err(error),
@@ -360,13 +425,12 @@ impl State {
             }
             Command::ScreenRemove(id) => self.disconnect(ScreenId(id)),
             Command::ScreenAdd(id) => self.connect(ScreenId(id)),
-            Command::Click(at) => {
-                if let Some((x, y)) = at {
-                    self.pointer_moved(seat, (x, y).into(), InputTime::now());
-                }
-                self.pointer_button(seat, BTN_LEFT, ButtonState::Pressed, InputTime::now());
-                self.pointer_button(seat, BTN_LEFT, ButtonState::Released, InputTime::now());
-            }
+            Command::Click(button, at, count) => self.send_click(seat, button, at, count),
+            Command::Drag(..) => return Err("drag replies when done, over a connection of its own".into()),
+            Command::Scroll(notches, at) => self.send_scroll(seat, notches, at),
+            Command::Key(combo) => self.send_combo(seat, &combo)?,
+            Command::Type(text) => self.send_text(seat, &text)?,
+            Command::FocusWindow(id) => self.focus_window_id(seat, id)?,
         }
         Ok(Value::Null)
     }

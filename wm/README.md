@@ -174,6 +174,13 @@ wm msg subscribe               # stays open: the state, then a line per change
 wm msg help                    # the rest
 ```
 
+Any seat can be driven through `wm msg` as hands would (a script, a
+binding, a test, an agent with a seat of its own): `seat 1 type Hello, world!` (in the seat's layout; what it
+can't type is refused up front), `seat 1 key ctrl+shift+t`,
+`seat 1 click right 300 200`, `double-click`, `scroll 0 3 X Y` (notches),
+`drag X1 Y1 X2 Y2` (paced, replies when done) and `focus-window ID`.
+Bindings, menus and focus following the mouse behave as for anyone.
+
 Other programs capture through `ext-image-copy-capture`: a screen as it
 shows (`grim -o NAME`), or a window alone, wherever it is and whether or
 not anyone sees it (`grim -T ID`, with its id from `wm msg tree`).

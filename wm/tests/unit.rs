@@ -510,6 +510,7 @@ mod screens {
 
 mod ipc {
     use wm::{
+        remote::Button,
         input::Action,
         ipc::{Command, Request, parse},
         layout::Direction,
@@ -535,8 +536,19 @@ mod ipc {
         assert_eq!(ok("animations").command, Command::Action(Action::Animations(None)));
         assert_eq!(ok("spawn kitty -e  htop").command, Command::Action(Action::Spawn("kitty -e htop".into())));
         assert_eq!(ok("pointer 10 20.5").command, Command::Pointer(10.0, 20.5));
-        assert_eq!(ok("click").command, Command::Click(None));
-        assert_eq!(ok("click 1 2").command, Command::Click(Some((1.0, 2.0))));
+        assert_eq!(ok("click").command, Command::Click(Button::Left, None, 1));
+        assert_eq!(ok("click 1 2").command, Command::Click(Button::Left, Some((1.0, 2.0)), 1));
+        assert_eq!(ok("click right 1 2").command, Command::Click(Button::Right, Some((1.0, 2.0)), 1));
+        assert_eq!(ok("double-click middle").command, Command::Click(Button::Middle, None, 2));
+        assert_eq!(ok("drag 1 2 3 4").command, Command::Drag((1.0, 2.0), (3.0, 4.0)));
+        assert_eq!(ok("scroll 0 -3").command, Command::Scroll((0.0, -3.0), None));
+        assert_eq!(ok("scroll 1 0 5 6").command, Command::Scroll((1.0, 0.0), Some((5.0, 6.0))));
+        assert_eq!(ok("key ctrl+shift+t").command, Command::Key("ctrl+shift+t".into()));
+        assert_eq!(ok("type hello,  world \n").command, Command::Type("hello,  world ".into()));
+        assert_eq!(ok("seat 1 type  two spaces").command, Command::Type(" two spaces".into()));
+        assert_eq!(ok("type").command, Command::Type(String::new()));
+        assert_eq!(ok("focus-window 12").command, Command::FocusWindow(12));
+        assert_eq!(ok("focus previous").command, Command::Action(Action::FocusPrevious));
         assert_eq!(ok("  close \n").command, Command::Action(Action::Close));
         assert_eq!(ok("take-workspace 7").command, Command::TakeWorkspace(7));
         assert_eq!(ok("screen-new").command, Command::ScreenNew);
@@ -549,7 +561,7 @@ mod ipc {
         assert_eq!(ok("focus left").seat, None);
         let r = ok("seat 1 click 5 6");
         assert_eq!(r.seat, Some(1));
-        assert_eq!(r.command, Command::Click(Some((5.0, 6.0))));
+        assert_eq!(r.command, Command::Click(Button::Left, Some((5.0, 6.0)), 1));
     }
 
     #[test]
@@ -558,6 +570,8 @@ mod ipc {
             "", "seat", "seat x tree", "seat 1", "fly", "focus up", "focus", "workspace 0", "workspace 10",
             "workspace x", "animations maybe", "pointer 1", "click 1", "spawn", "tree now",
             "take-workspace", "take-workspace x", "screen-new 1", "screen-remove", "screen-add x",
+            "click up", "click left 1", "drag 1 2 3", "scroll 1", "scroll a b", "key", "key a b",
+            "focus-window", "focus-window x",
         ] {
             assert!(parse(line).is_err(), "{line:?} should fail");
         }

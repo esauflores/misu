@@ -17,6 +17,7 @@ pub mod ipc;
 pub mod layers;
 pub mod layout;
 pub mod lock;
+pub mod remote;
 pub mod screens;
 pub mod settings;
 pub mod shot;

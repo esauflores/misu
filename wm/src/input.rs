@@ -22,6 +22,8 @@ use crate::{
 
 /// linux/input-event-codes.h
 pub const BTN_LEFT: u32 = 0x110;
+pub const BTN_RIGHT: u32 = 0x111;
+pub const BTN_MIDDLE: u32 = 0x112;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Action {

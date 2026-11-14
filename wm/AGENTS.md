@@ -100,6 +100,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/settings.rs` | `input`: xkb, repeat, libinput options, focus follows mouse |
 | `src/screens.rs` | `screens`: modes, order, off, laptop panels |
 | `src/clipboard.rs` | primary selection, wlr/ext data control |
+| `src/remote.rs` | remote input through `wm msg`: keys, typing, clicks, scroll, drag |
 | `src/activation.rs` | xdg-activation: per-seat tokens, `State::activate` |
 | `src/idle.rs` | ext-idle-notify, per seat |
 | `src/lock.rs` | ext-session-lock: lock surfaces, input and drawing while locked |
@@ -270,8 +271,16 @@ by Misu's install.sh):
   and keeps where it came from as the next previous. Unbound by default
   (nested, Alt+Tab is Mod+Tab); Misu binds Alt+Tab. Decided: no float
   toggle and no width presets; columns stay the screen's width.
-- Next: agent-seat commands (keys, typing, scroll,
-  right click, focus a window), config includes. Later: gamma
+- Remote input (done; for any seat, an agent's included): `remote.rs`, through `keyboard_input` and
+  the pointer functions, so bindings and grabs apply. `key_for` finds a
+  keysym's key and level in the seat's active layout (via the keymap
+  under `with_xkb_state`); `type` adds Shift/AltGr and refuses the whole
+  text if a character is missing. `drag` is paced on a calloop timer
+  (10 × 15 ms) and replies when done (`serve`, like screenshots): motion
+  arriving with the release in one batch, GTK ignores. `scroll` sends
+  wheel notches (15 px, v120). `focus-window` = `activate`. The e2e run
+  drives a GTK app as seat 1 through each.
+- Phase 1 is done (config includes dropped: no dictate module). Later: gamma
   (`wlr-gamma-control`, for wlsunset; not needed yet).
 XWayland: through xwayland-satellite (Arch `extra`), not Smithay's X11
 WM: each X11 window arrives as an xdg toplevel of satellite's own
