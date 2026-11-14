@@ -231,10 +231,7 @@ impl State {
         match target {
             Target::Screen(id) => {
                 let elements = self.screen_elements(renderer, *id, now);
-                if pointers {
-                    return elements;
-                }
-                elements.into_iter().filter(|e| e.kind() != Kind::Cursor).collect()
+                elements.into_iter().filter(|e| pointers || e.kind() != Kind::Cursor).collect()
             }
             Target::Window(_) if self.is_locked() => Vec::new(),
             Target::Window(window) => {

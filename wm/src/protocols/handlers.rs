@@ -14,7 +14,6 @@ use smithay::{
         pointer::{CursorImageStatus, Focus},
     },
     reexports::{
-        wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
             Client, DisplayHandle, Resource,
             protocol::{wl_buffer, wl_output::WlOutput, wl_seat, wl_surface::WlSurface},
@@ -244,9 +243,6 @@ impl XdgShellHandler for State {
         surface.send_repositioned(token);
     }
 
-    // Tiled windows don't move or resize themselves.
-    fn move_request(&mut self, _surface: ToplevelSurface, _seat: wl_seat::WlSeat, _serial: Serial) {}
-
     /// A menu takes the pointer and keyboard of the seat it was opened
     /// with (the client names it), and only that seat's: a click outside
     /// it closes it, the other seats carry on.
@@ -304,21 +300,11 @@ impl State {
             state.geometry = state.positioner.get_unconstrained_geometry(target);
         });
     }
-}
 
-smithay::delegate_dispatch2!(State);
-
-impl State {
     fn fullscreen_request_for(&mut self, surface: &ToplevelSurface, on: bool) {
         match self.window_for_surface(surface.wl_surface()) {
             Some(window) => self.set_fullscreen(&window, Some(on), None),
-            None => surface.with_pending_state(|s| {
-                if on {
-                    s.states.set(xdg_toplevel::State::Fullscreen);
-                } else {
-                    s.states.unset(xdg_toplevel::State::Fullscreen);
-                }
-            }),
+            None => surface.with_pending_state(|s| crate::layout::set_fullscreen_state(&mut s.states, on)),
         }
         // A configure answers it, changed or not.
         if surface.is_initial_configure_sent() {
@@ -326,6 +312,8 @@ impl State {
         }
     }
 }
+
+smithay::delegate_dispatch2!(State);
 
 // The clipboard and the primary selection (select, then middle-click),
 // each seat's own: what one seat copies, another doesn't paste. Clipboard

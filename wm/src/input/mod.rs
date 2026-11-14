@@ -220,23 +220,9 @@ impl State {
     /// (`Exclusive`, fuzzel).
     fn click_focus(&mut self, seat: usize, pos: Point<f64, Logical>) {
         let layer = |state: &Self, layers: &[Layer]| state.layer_under(seat, layers, pos).map(|(l, _, _)| l);
-        let target = match layer(self, &[Layer::Overlay, Layer::Top]) {
-            Some(l) => Err(l),
-            None => match self.window_under(seat, pos) {
-                Some((window, _)) => Ok(window),
-                None => match layer(self, &[Layer::Bottom, Layer::Background]) {
-                    Some(l) => Err(l),
-                    None => return,
-                },
-            },
-        };
-        match target {
-            Err(layer) => {
-                if layer.can_receive_keyboard_focus() {
-                    self.focus_layer(seat, Some(layer));
-                }
-            }
-            Ok(window) => {
+        let mut target = layer(self, &[Layer::Overlay, Layer::Top]);
+        if target.is_none() {
+            if let Some((window, _)) = self.window_under(seat, pos) {
                 let held = self.seats[seat]
                     .layer_focus
                     .as_ref()
@@ -244,8 +230,12 @@ impl State {
                 if !held {
                     self.seats[seat].layer_focus = None;
                 }
-                self.focus(seat, Some(window), false);
+                return self.focus(seat, Some(window), false);
             }
+            target = layer(self, &[Layer::Bottom, Layer::Background]);
+        }
+        if let Some(layer) = target.filter(|l| l.can_receive_keyboard_focus()) {
+            self.focus_layer(seat, Some(layer));
         }
     }
 

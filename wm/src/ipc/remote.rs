@@ -2,16 +2,11 @@
 //! (or as well as) its devices, by a script, a binding, a test or an agent.
 //! It goes in as hands' would, through the seat's keyboard and pointer, so
 //! bindings, focus following the mouse and menus all behave the same.
-//!
-//! - `key ctrl+shift+t`: a combo, pressed and released (any xkb keysym
-//!   name, any case; modifiers ctrl, shift, alt, super or mod).
-//! - `type TEXT`: the rest of the line, as keys of the seat's layout
-//!   (Shift and AltGr as needed). Characters the layout lacks are refused
-//!   before anything is typed.
-//! - `scroll DX DY [X Y]`: wheel notches (positive: right, down).
-//! - `click [left|right|middle] [X Y]`, `double-click …`.
-//! - `drag X1 Y1 X2 Y2`: press at one point, move, release at the other.
-//! - `focus-window ID`: go to a window (an id from `tree`) and focus it.
+//! The commands are in `ipc::HELP`. A `key` combo is any xkb keysym name,
+//! any case, with ctrl, shift, alt, super or mod; `type` presses Shift and
+//! AltGr as needed, and refuses text the layout lacks before typing any.
+
+use std::time::Duration;
 
 use smithay::{
     backend::input::{Axis, AxisSource, ButtonState, InputTime, KeyState},
@@ -19,11 +14,8 @@ use smithay::{
         keyboard::{Keycode, Keysym, KeyboardSource, xkb},
         pointer::AxisFrame,
     },
+    reexports::calloop::timer::{TimeoutAction, Timer},
 };
-
-use std::time::Duration;
-
-use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 
 use crate::{
     Modifier,
@@ -35,12 +27,13 @@ use crate::{
 const DRAG_STEPS: u32 = 10;
 const DRAG_STEP: Duration = Duration::from_millis(15);
 
-/// A pointer button.
+/// A pointer button; its value is its code.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(u32)]
 pub enum Button {
-    Left,
-    Right,
-    Middle,
+    Left = BTN_LEFT,
+    Right = BTN_RIGHT,
+    Middle = BTN_MIDDLE,
 }
 
 impl Button {
@@ -50,14 +43,6 @@ impl Button {
             "right" => Some(Self::Right),
             "middle" => Some(Self::Middle),
             _ => None,
-        }
-    }
-
-    fn code(self) -> u32 {
-        match self {
-            Self::Left => BTN_LEFT,
-            Self::Right => BTN_RIGHT,
-            Self::Middle => BTN_MIDDLE,
         }
     }
 }
@@ -164,8 +149,8 @@ impl State {
             self.pointer_moved(seat, (x, y).into(), InputTime::now());
         }
         for _ in 0..count {
-            self.pointer_button(seat, button.code(), ButtonState::Pressed, InputTime::now());
-            self.pointer_button(seat, button.code(), ButtonState::Released, InputTime::now());
+            self.pointer_button(seat, button as u32, ButtonState::Pressed, InputTime::now());
+            self.pointer_button(seat, button as u32, ButtonState::Released, InputTime::now());
         }
     }
 

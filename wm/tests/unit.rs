@@ -1,5 +1,16 @@
 //! Unit tests, a module per subject: `cargo test --test unit layout::` runs one.
 
+/// The config `source` with these flags (and no other file).
+fn load(source: &str, flags: wm::Flags) -> Result<wm::Config, String> {
+    static N: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let path = std::env::temp_dir().join(format!("wm-config-{}-{n}.json", std::process::id()));
+    std::fs::write(&path, source).unwrap();
+    let config = wm::Config::load(wm::Flags { config: Some(path.clone()), ..flags });
+    std::fs::remove_file(&path).unwrap();
+    config
+}
+
 mod layout {
     use std::{
         cell::Cell,
@@ -674,6 +685,7 @@ mod events {
 }
 
 mod options {
+    use super::load;
     use smithay::input::keyboard::{Keysym, ModifiersState, keysyms};
     use wm::{Backend, Command, Config, Flags, Modifier, input::{Action, bindings::Bindings}, layout::Direction};
 
@@ -700,18 +712,13 @@ mod options {
         let colors = Config::default().colors;
         assert_eq!(colors.seat(0), [242.0 / 255.0, 242.0 / 255.0, 242.0 / 255.0, 1.0]);
         assert_eq!(colors.seat(4), colors.seat(0), "round again past the end");
-        let path = std::env::temp_dir().join(format!("wm-colors-config-{}.json", std::process::id()));
-        let parse = |source: &str| {
-            std::fs::write(&path, source).unwrap();
-            Config::from_args(["--config", path.to_str().unwrap()].map(String::from))
-        };
-        let Ok(Command::Run(c)) = parse(r##"{"colors":{"seats":["#ff0000","#00ff0080"]}}"##) else { panic!() };
+        let parse = |source: &str| load(source, Flags::default());
+        let c = parse(r##"{"colors":{"seats":["#ff0000","#00ff0080"]}}"##).unwrap();
         assert_eq!((c.colors.seat(0), c.colors.seat(1), c.colors.seat(2)), ([1.0, 0.0, 0.0, 1.0], [0.0, 1.0, 0.0, 128.0 / 255.0], [1.0, 0.0, 0.0, 1.0]));
         assert_eq!(c.colors.inactive, colors.inactive, "the default where the file says nothing");
         for bad in [r#"{"colors":{"seats":["red"]}}"#, r##"{"colors":{"inactive":"#12345"}}"##, r#"{"colors":{"border":2}}"#, r#"{"colors":[]}"#] {
             assert!(parse(bad).is_err(), "{bad}");
         }
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
@@ -721,17 +728,12 @@ mod options {
         assert_eq!((input.keyboard.layout.as_str(), input.keyboard.repeat_rate, input.keyboard.repeat_delay), ("us", 25, 600));
         assert!(!input.focus_follows_mouse);
         assert_eq!(input.touchpad.tap, None, "libinput's default unless set");
-        let path = std::env::temp_dir().join(format!("wm-input-config-{}.json", std::process::id()));
-        let parse = |source: &str| {
-            std::fs::write(&path, source).unwrap();
-            Config::from_args(["--config", path.to_str().unwrap()].map(String::from))
-        };
-        let Ok(Command::Run(c)) = parse(
+        let parse = |source: &str| load(source, Flags::default());
+        let c = parse(
             r#"{"input": {"keyboard": {"layout": "es", "repeat_rate": 40}, "focus_follows_mouse": true,
                 "touchpad": {"tap": true, "natural_scroll": true, "click_method": "clickfinger"}, "mouse": {"accel_speed": -0.5}}}"#,
-        ) else {
-            panic!()
-        };
+        )
+        .unwrap();
         let i = &c.input;
         assert_eq!((i.keyboard.layout.as_str(), i.keyboard.repeat_rate, i.keyboard.repeat_delay), ("es", 40, 600));
         assert!(i.focus_follows_mouse);
@@ -746,30 +748,19 @@ mod options {
         ] {
             assert!(parse(bad).is_err(), "{bad}");
         }
-        let _ = std::fs::remove_file(&path);
     }
 
     #[test]
     fn x11_apps_are_on_unless_the_file_says_no() {
         assert!(Config::default().xwayland);
-        let path = std::env::temp_dir().join(format!("wm-xwayland-config-{}.json", std::process::id()));
-        let parse = |source: &str| {
-            std::fs::write(&path, source).unwrap();
-            Config::from_args(["--config", path.to_str().unwrap()].map(String::from))
-        };
-        assert!(matches!(parse(r#"{"xwayland": false}"#), Ok(Command::Run(c)) if !c.xwayland));
-        assert!(parse(r#"{"xwayland": "no"}"#).is_err());
-        let _ = std::fs::remove_file(&path);
+        assert!(!load(r#"{"xwayland": false}"#, Flags::default()).unwrap().xwayland);
+        assert!(load(r#"{"xwayland": "no"}"#, Flags::default()).is_err());
     }
 
     #[test]
     fn device_configuration_routes_names_and_validates_seats() {
-        let path = std::env::temp_dir().join(format!("wm-device-config-{}.json", std::process::id()));
-        let parse = |source: &str, seats: &str| {
-            std::fs::write(&path, source).unwrap();
-            Config::from_args(["--config", path.to_str().unwrap(), "--seats", seats].map(String::from))
-        };
-        let Ok(Command::Run(c)) = parse(r#"{"devices":{"USB Keyboard":2,"USB Mouse":1}}"#, "3") else { panic!() };
+        let parse = |source: &str, seats| load(source, Flags { seats: Some(seats), ..Default::default() });
+        let c = parse(r#"{"devices":{"USB Keyboard":2,"USB Mouse":1}}"#, 3).unwrap();
         assert_eq!(c.device_seat("USB Keyboard"), 2);
         assert_eq!(c.device_seat("USB Mouse"), 1);
         assert_eq!(c.device_seat("usb mouse"), 0);
@@ -784,11 +775,11 @@ mod options {
             r#"{"device":{}}"#,
             "[]", "invalid",
         ] {
-            assert!(parse(bad, "3").is_err(), "{bad}");
+            assert!(parse(bad, 3).is_err(), "{bad}");
         }
-        assert!(parse("{}", "1").is_ok());
-        std::fs::remove_file(&path).unwrap();
-        assert!(Config::from_args(["--config".into(), path.to_string_lossy().into_owned()]).is_err());
+        assert!(parse("{}", 1).is_ok());
+        let missing = std::env::temp_dir().join(format!("wm-missing-config-{}.json", std::process::id()));
+        assert!(Config::from_args(["--config".into(), missing.to_string_lossy().into_owned()]).is_err());
     }
 
     #[test]
@@ -802,15 +793,6 @@ mod options {
 
     fn sym(raw: u32) -> Keysym {
         Keysym::new(raw)
-    }
-
-    /// The config `source` with these flags (and no other file).
-    fn load(source: &str, flags: Flags) -> Result<Config, String> {
-        let path = std::env::temp_dir().join(format!("wm-config-{}-{}.json", std::process::id(), source.len()));
-        std::fs::write(&path, source).unwrap();
-        let config = Config::load(Flags { config: Some(path.clone()), ..flags });
-        std::fs::remove_file(&path).unwrap();
-        config
     }
 
     #[test]
@@ -979,14 +961,11 @@ mod input {
     #[test]
     fn bindings_run_for_the_pressing_seat() {
         use smithay::{backend::input::{InputTime, KeyState}, input::keyboard::{KeyboardSource, Keysym, keysyms}, reexports::{calloop::EventLoop, wayland_server::Display}};
-        use wm::{Config, Flags, state::State};
+        use wm::{Flags, state::State};
         if !isolated("input::bindings_run_for_the_pressing_seat") {
             return;
         }
-        let path = std::env::temp_dir().join(format!("wm-bindings-{}.json", std::process::id()));
-        std::fs::write(&path, r#"{"bindings":{"Mod+Shift+2":"animations off","Mod+a":"animations toggle"}}"#).unwrap();
-        let config = Config::load(Flags { config: Some(path.clone()), ..Default::default() }).unwrap();
-        std::fs::remove_file(&path).unwrap();
+        let config = super::load(r#"{"bindings":{"Mod+Shift+2":"animations off","Mod+a":"animations toggle"}}"#, Flags::default()).unwrap();
         let mut event_loop = EventLoop::try_new().unwrap();
         let mut state = State::new(&mut event_loop, Display::new().unwrap(), config);
         let keyboard = state.seats[1].seat.get_keyboard().unwrap();

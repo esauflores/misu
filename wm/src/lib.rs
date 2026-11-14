@@ -40,7 +40,6 @@ pub enum Modifier {
     Super,
 }
 
-
 /// What the command line sets; it goes over the config file.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct Flags {

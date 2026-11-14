@@ -28,11 +28,6 @@ use crate::state::State;
 /// Ran this long, an exit is worth starting it again for.
 const STEADY: Duration = Duration::from_secs(10);
 
-/// The X display `:N` satellite serves.
-pub struct Xwayland {
-    pub display: String,
-}
-
 /// The first display number with neither a socket nor a lock file.
 fn free_display() -> Option<u32> {
     (0..64).find(|n| {
@@ -63,7 +58,7 @@ impl State {
         // Safety: called before any thread is started.
         unsafe { std::env::set_var("DISPLAY", &name) };
         tracing::info!("X11 apps on DISPLAY={name}, through xwayland-satellite");
-        self.xwayland = Some(Xwayland { display: name.clone() });
+        self.xwayland = Some(name.clone());
         self.run_satellite(name);
     }
 

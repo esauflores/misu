@@ -106,8 +106,8 @@ pub struct State {
     /// Kept alive for its global: clients scale and crop their buffers
     /// (xwayland-satellite needs it).
     pub _viewporter: smithay::wayland::viewporter::ViewporterState,
-    /// X11 apps' display, while xwayland-satellite serves one.
-    pub xwayland: Option<crate::protocols::xwayland::Xwayland>,
+    /// X11 apps' display (`:N`), while xwayland-satellite serves one.
+    pub xwayland: Option<String>,
     /// Bumped when the input settings may have changed (`reload`): the
     /// backend sets its devices' options again.
     pub input_generation: u64,

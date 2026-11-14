@@ -149,7 +149,6 @@ impl State {
     /// Frame callbacks for every connected screen's layer surfaces, and
     /// forgetting the ones that went away.
     pub fn layers_frame(&self, time: Duration, throttle: Option<Duration>) {
-        self.lock_frame(time, throttle);
         for id in &self.connected {
             let output = &self.screens[id].output;
             let mut map = layer_map_for_output(output);

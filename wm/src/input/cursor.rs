@@ -163,53 +163,41 @@ impl State {
         self.pointer_elements(renderer, seats)
     }
 
-    /// Each `(seat, at, status)`'s pointer drawn.
+    /// Each `(seat, at, status)`'s pointer drawn as its status says.
     fn pointer_elements(&mut self, renderer: &mut GlesRenderer, seats: Vec<(usize, Point<f64, Logical>, CursorImageStatus)>) -> Vec<ShotElement> {
         let mut elements = Vec::new();
         for (index, at, status) in seats {
-            self.pointer_element(renderer, index, at, status, &mut elements);
-        }
-        elements
-    }
-
-    /// Seat `index`'s pointer at `at`, drawn as `status` says.
-    fn pointer_element(
-        &mut self,
-        renderer: &mut GlesRenderer,
-        index: usize,
-        at: Point<f64, Logical>,
-        status: CursorImageStatus,
-        elements: &mut Vec<ShotElement>,
-    ) {
-        let at = at.to_i32_round::<i32>();
-        match status {
-            CursorImageStatus::Hidden => {}
-            CursorImageStatus::Surface(surface) => {
-                let hotspot = with_states(&surface, |states| {
-                    states
-                        .data_map
-                        .get::<CursorImageSurfaceData>()
-                        .map(|d| d.lock().unwrap().hotspot)
-                        .unwrap_or_default()
-                });
-                let loc = (at - hotspot).to_physical(1);
-                elements.extend(
-                    render_elements_from_surface_tree(renderer, &surface, loc, Scale::from(1.0), 1.0, Kind::Cursor)
-                        .into_iter()
-                        .map(ShotElement::Surface),
-                );
-            }
-            CursorImageStatus::Named(icon) => {
-                let tint = (index > 0).then(|| self.config.colors.seat(index));
-                if let Some((buffer, hotspot)) = self.cursors.get(icon, tint) {
-                    let loc = (at - hotspot).to_f64().to_physical(1.0);
-                    if let Ok(element) =
-                        MemoryRenderBufferRenderElement::from_buffer(renderer, loc, &buffer, None, None, None, Kind::Cursor)
-                    {
-                        elements.push(ShotElement::Cursor(element));
+            let at = at.to_i32_round::<i32>();
+            match status {
+                CursorImageStatus::Hidden => {}
+                CursorImageStatus::Surface(surface) => {
+                    let hotspot = with_states(&surface, |states| {
+                        states
+                            .data_map
+                            .get::<CursorImageSurfaceData>()
+                            .map(|d| d.lock().unwrap().hotspot)
+                            .unwrap_or_default()
+                    });
+                    let loc = (at - hotspot).to_physical(1);
+                    elements.extend(
+                        render_elements_from_surface_tree(renderer, &surface, loc, Scale::from(1.0), 1.0, Kind::Cursor)
+                            .into_iter()
+                            .map(ShotElement::Surface),
+                    );
+                }
+                CursorImageStatus::Named(icon) => {
+                    let tint = (index > 0).then(|| self.config.colors.seat(index));
+                    if let Some((buffer, hotspot)) = self.cursors.get(icon, tint) {
+                        let loc = (at - hotspot).to_f64().to_physical(1.0);
+                        if let Ok(element) =
+                            MemoryRenderBufferRenderElement::from_buffer(renderer, loc, &buffer, None, None, None, Kind::Cursor)
+                        {
+                            elements.push(ShotElement::Cursor(element));
+                        }
                     }
                 }
             }
         }
-    }
+        elements
+}
 }

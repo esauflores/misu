@@ -55,9 +55,24 @@ fn wait_for<T>(what: &str, mut f: impl FnMut() -> Option<T>) -> T {
 
 struct Wm {
     sock: PathBuf,
+    /// Its runtime dir, which its Wayland socket is in.
+    runtime: PathBuf,
 }
 
 impl Wm {
+    /// Its Wayland display, from its control socket's name.
+    fn display(&self) -> String {
+        let name = self.sock.file_name().unwrap().to_string_lossy();
+        name.strip_prefix("wm.").unwrap().strip_suffix(".sock").unwrap().to_string()
+    }
+
+    /// `program`, as a client of wm.
+    fn client(&self, program: &str) -> Command {
+        let mut command = Command::new(program);
+        command.env("XDG_RUNTIME_DIR", &self.runtime).env("WAYLAND_DISPLAY", self.display());
+        command
+    }
+
     fn try_msg(&self, line: &str) -> Option<Value> {
         let mut stream = UnixStream::connect(&self.sock).ok()?;
         writeln!(stream, "{line}").ok()?;
@@ -75,6 +90,19 @@ impl Wm {
     fn tree(&self) -> Value {
         self.msg("tree")["result"].clone()
     }
+}
+
+/// The window titled `title`, on any workspace.
+fn titled(tree: &Value, title: &str) -> Option<Value> {
+    tree["workspaces"].as_array()?.iter().flat_map(|ws| ws["windows"].as_array().unwrap().iter()).find(|w| w["title"] == title).cloned()
+}
+
+/// Whether python3 has GTK 4, for the steps with GTK apps.
+fn has_gtk4() -> bool {
+    Command::new("python3")
+        .args(["-c", "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk"])
+        .status()
+        .is_ok_and(|s| s.success())
 }
 
 /// The windows of the workspace numbered `number` on the (one) screen.
@@ -249,7 +277,7 @@ fn nested_in_headless_scroll() {
         })
     });
     assert!(UnixStream::connect(&outer).is_ok(), "the outer socket is untouched");
-    let wm = Wm { sock };
+    let wm = Wm { sock, runtime: runtime.clone() };
     wait_for("wm's control socket", || wm.try_msg("tree"));
 
     // Start: one screen, number 1, recognised by its make, model and serial;
@@ -327,7 +355,7 @@ fn nested_in_headless_scroll() {
     assert_eq!(read_png(&dir.join("seat0.png")).0, w);
     assert!(wm.try_msg("seat 1 screenshot relative.png").unwrap()["ok"] == false, "wm wants an absolute path");
 
-    grim_captures(&wm, &dir, &runtime, &tree);
+    grim_captures(&wm, &dir, &tree);
 
     // Seat 1 comes over to workspace 1 and scrolls its own view there.
     wm.msg("seat 1 workspace 1");
@@ -388,7 +416,7 @@ fn nested_in_headless_scroll() {
     assert_eq!(windows(&tree, 1)[1]["activated"], true);
     assert_eq!(tree["screens"][0]["workspaces"].as_array().unwrap().len(), 3, "made on demand");
     if on_path("grim") {
-        let moved = grim(&wm, &dir, &runtime, &["-T", &ids[1].to_string()], "grim-moved.ppm");
+        let moved = grim(&wm, &dir, &["-T", &ids[1].to_string()], "grim-moved.ppm");
         assert!(moved.is_some(), "a window moved to another workspace can still be captured");
     }
     // A subscriber hears the state, then each change as it happens.
@@ -521,12 +549,12 @@ fn nested_in_headless_scroll() {
     dialog_floats(&wm, &dir);
     menu_grabs(&wm, &dir);
     x11_apps(&wm, &dir);
-    clipboards(&wm, &runtime);
-    idle_per_seat(&wm, &dir, &runtime);
+    clipboards(&wm);
+    idle_per_seat(&wm, &dir);
     activation(&wm, &dir);
     focus_previous(&wm);
     remote_input(&wm, &dir);
-    session_lock(&wm, &dir, &runtime);
+    session_lock(&wm, &dir);
 
     // Errors come back as errors.
     let reply = wm.try_msg("seat 7 focus left").unwrap();
@@ -673,12 +701,12 @@ ShellRoot {
 /// Other programs capture through ext-image-copy-capture: grim takes the
 /// screen as seat 0's screenshot shows it, and seat 1's window, though no
 /// screen shows it, by its id in the tree.
-fn grim_captures(wm: &Wm, dir: &Path, runtime: &Path, tree: &Value) {
+fn grim_captures(wm: &Wm, dir: &Path, tree: &Value) {
     if !on_path("grim") {
         eprintln!("grim captures skipped: needs grim");
         return;
     }
-    let grim = |args: &[&str], name: &str| grim(wm, dir, runtime, args, name).unwrap_or_else(|| panic!("grim {args:?}"));
+    let grim = |args: &[&str], name: &str| grim(wm, dir, args, name).unwrap_or_else(|| panic!("grim {args:?}"));
     let pixel = |w: usize, rgb: &[u8], x: usize, y: usize| rgb[(y * w + x) * 3..(y * w + x) * 3 + 3].to_vec();
     let near = |a: &[u8], b: &[u8]| a.iter().zip(b).all(|(&a, &b)| a.abs_diff(b) <= 2);
 
@@ -701,18 +729,9 @@ fn grim_captures(wm: &Wm, dir: &Path, runtime: &Path, tree: &Value) {
 
 /// Capture with grim on wm's display: width, height, RGB rows; None if it
 /// failed.
-fn grim(wm: &Wm, dir: &Path, runtime: &Path, args: &[&str], name: &str) -> Option<(usize, usize, Vec<u8>)> {
-    let display = wm.sock.file_name().unwrap().to_string_lossy();
-    let display = display.strip_prefix("wm.").unwrap().strip_suffix(".sock").unwrap().to_string();
+fn grim(wm: &Wm, dir: &Path, args: &[&str], name: &str) -> Option<(usize, usize, Vec<u8>)> {
     let path = dir.join(name);
-    let status = Command::new("grim")
-        .args(["-t", "ppm"])
-        .args(args)
-        .arg(&path)
-        .env("XDG_RUNTIME_DIR", runtime)
-        .env("WAYLAND_DISPLAY", &display)
-        .status()
-        .unwrap();
+    let status = wm.client("grim").args(["-t", "ppm"]).args(args).arg(&path).status().unwrap();
     status.success().then(|| read_ppm(&path))
 }
 
@@ -749,35 +768,11 @@ fn read_png(path: &Path) -> (usize, Vec<u8>) {
 /// A GTK window opens a dialog for itself: the dialog floats over it, centred,
 /// at its own size, focused; the window has a full-screen column.
 fn dialog_floats(wm: &Wm, dir: &Path) {
-    let gtk = Command::new("python3")
-        .args(["-c", "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk"])
-        .status()
-        .is_ok_and(|s| s.success());
-    if !gtk {
+    if !has_gtk4() {
         eprintln!("dialogs: skipped, needs python3 with GTK 4");
         return;
     }
-    let script = dir.join("dialog.py");
-    fs::write(
-        &script,
-        r#"import gi
-gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, GLib
-Gtk.init()
-parent = Gtk.Window(title="e2e-parent")
-parent.present()
-def dialog():
-    Gtk.Window(title="e2e-dialog", transient_for=parent, default_width=320, default_height=180).present()
-    return False
-GLib.timeout_add(300, dialog)
-GLib.MainLoop().run()
-"#,
-    )
-    .unwrap();
-    let pid = spawn_tracked(wm, 0, dir, "dialog", &format!("env GDK_BACKEND=wayland python3 {}", script.display()));
-    let titled = |tree: &Value, title: &str| -> Option<Value> {
-        tree["workspaces"].as_array()?.iter().flat_map(|ws| ws["windows"].as_array().unwrap().iter()).find(|w| w["title"] == title).cloned()
-    };
+    let pid = spawn_dialog(wm, dir, "wayland", "e2e-parent", "e2e-dialog");
     let (parent, dialog) = wait_for("the window and its dialog", || {
         let tree = wm.tree();
         let (parent, dialog) = (titled(&tree, "e2e-parent")?, titled(&tree, "e2e-dialog")?);
@@ -815,15 +810,36 @@ GLib.MainLoop().run()
     });
 }
 
+/// Run, as seat 0, a GTK window titled `parent` on GDK `backend` that opens
+/// a dialog titled `dialog` for itself; its pid file.
+fn spawn_dialog(wm: &Wm, dir: &Path, backend: &str, parent: &str, dialog: &str) -> PathBuf {
+    let script = dir.join(format!("{parent}.py"));
+    fs::write(
+        &script,
+        format!(
+            r#"import gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk, GLib
+Gtk.init()
+parent = Gtk.Window(title={parent:?})
+parent.present()
+def dialog():
+    Gtk.Window(title={dialog:?}, transient_for=parent, default_width=320, default_height=180).present()
+    return False
+GLib.timeout_add(500, dialog)
+GLib.MainLoop().run()
+"#
+        ),
+    )
+    .unwrap();
+    spawn_tracked(wm, 0, dir, parent, &format!("env GDK_BACKEND={backend} python3 {}", script.display()))
+}
+
 /// A GTK window's menu (an autohide popover, an xdg_popup grab) holds the
 /// pointer and keyboard of seat 0, which opened it, and no one else's; a
 /// click of seat 0's outside it closes it.
 fn menu_grabs(wm: &Wm, dir: &Path) {
-    let gtk = Command::new("python3")
-        .args(["-c", "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk"])
-        .status()
-        .is_ok_and(|s| s.success());
-    if !gtk {
+    if !has_gtk4() {
         eprintln!("menus: skipped, needs python3 with GTK 4");
         return;
     }
@@ -860,9 +876,7 @@ GLib.MainLoop().run()
     assert!(!closed.exists());
 
     // Seat 0 clicks low in the window, far from the menu by the button.
-    let window = tree["workspaces"].as_array().unwrap().iter()
-        .flat_map(|ws| ws["windows"].as_array().unwrap().iter())
-        .find(|w| w["title"] == "e2e-menu").unwrap().clone();
+    let window = titled(&tree, "e2e-menu").unwrap();
     let (x, y) = centre(&tree, 0, &window);
     wm.msg(&format!("seat 0 click {x} {}", y + window["height"].as_i64().unwrap() / 3));
     wait_for("the menu closed", || closed.exists().then_some(()));
@@ -885,27 +899,7 @@ fn x11_apps(wm: &Wm, dir: &Path) {
         return;
     };
     assert!(display.starts_with(':'), "{display}");
-    let script = dir.join("x11.py");
-    fs::write(
-        &script,
-        r#"import gi
-gi.require_version("Gtk", "4.0")
-from gi.repository import Gtk, GLib
-Gtk.init()
-parent = Gtk.Window(title="e2e-x11")
-parent.present()
-def dialog():
-    Gtk.Window(title="e2e-x11-dialog", transient_for=parent, default_width=320, default_height=180).present()
-    return False
-GLib.timeout_add(500, dialog)
-GLib.MainLoop().run()
-"#,
-    )
-    .unwrap();
-    let pid = spawn_tracked(wm, 0, dir, "x11", &format!("env GDK_BACKEND=x11 python3 {}", script.display()));
-    let titled = |tree: &Value, title: &str| -> Option<Value> {
-        tree["workspaces"].as_array()?.iter().flat_map(|ws| ws["windows"].as_array().unwrap().iter()).find(|w| w["title"] == title).cloned()
-    };
+    let pid = spawn_dialog(wm, dir, "x11", "e2e-x11", "e2e-x11-dialog");
     let (parent, dialog) = wait_for("the X11 window and its dialog", || {
         let tree = wm.tree();
         let (parent, dialog) = (titled(&tree, "e2e-x11")?, titled(&tree, "e2e-x11-dialog")?);
@@ -926,9 +920,8 @@ GLib.MainLoop().run()
 /// screenshots are refused, the screen shows only it. A second locker is
 /// refused; the first dying leaves the session locked until another takes
 /// over and unlocks.
-fn session_lock(wm: &Wm, dir: &Path, runtime: &Path) {
-    let display = wm.sock.file_name().unwrap().to_string_lossy();
-    let display = display.strip_prefix("wm.").unwrap().strip_suffix(".sock").unwrap().to_string();
+fn session_lock(wm: &Wm, dir: &Path) {
+    let (runtime, display) = (&wm.runtime, wm.display());
     let refused = |line: &str| {
         let reply = wm.try_msg(line).unwrap();
         reply["ok"] == false && reply["error"].as_str().is_some_and(|e| e.contains("locked"))
@@ -944,18 +937,8 @@ fn session_lock(wm: &Wm, dir: &Path, runtime: &Path) {
     assert!(refused(&format!("screenshot {}", dir.join("locked.png").display())), "screenshots are refused");
     assert!(!dir.join("locked.png").exists());
     if on_path("grim") {
-        let path = dir.join("grim-locked.ppm");
         let screen = wm.tree()["screens"][0]["name"].as_str().unwrap().to_string();
-        let ok = Command::new("grim")
-            .args(["-t", "ppm", "-o", &screen])
-            .arg(&path)
-            .env("XDG_RUNTIME_DIR", runtime)
-            .env("WAYLAND_DISPLAY", &display)
-            .status()
-            .unwrap()
-            .success();
-        assert!(ok, "grim while locked");
-        let (w, h, rgb) = read_ppm(&path);
+        let (w, h, rgb) = grim(wm, dir, &["-o", &screen], "grim-locked.ppm").expect("grim while locked");
         let red = rgb.as_chunks::<3>().0.iter().filter(|p| p[0] > 150 && p[1] < 80 && p[2] < 80).count();
         assert!(red > w * h * 9 / 10, "the screen shows only the locker: {red} of {} pixels red", w * h);
     }
@@ -979,20 +962,16 @@ fn session_lock(wm: &Wm, dir: &Path, runtime: &Path) {
 
 /// Each seat has its own clipboard and primary selection, which wl-copy and
 /// wl-paste reach through data control, with no window.
-fn clipboards(wm: &Wm, runtime: &Path) {
+fn clipboards(wm: &Wm) {
     if !on_path("wl-copy") || !on_path("wl-paste") {
         eprintln!("clipboards skipped: needs wl-clipboard");
         return;
     }
-    let display = wm.sock.file_name().unwrap().to_string_lossy();
-    let display = display.strip_prefix("wm.").unwrap().strip_suffix(".sock").unwrap().to_string();
     let tree = wm.tree();
     let name = |s: usize| seat(&tree, s)["name"].as_str().unwrap().to_string();
     let run = |program: &str, args: &[&str]| {
-        let out = Command::new(program)
+        let out = wm.client(program)
             .args(args)
-            .env("XDG_RUNTIME_DIR", runtime)
-            .env("WAYLAND_DISPLAY", &display)
             .stdin(Stdio::null())
             .stderr(Stdio::null())
             .output()
@@ -1022,25 +1001,22 @@ fn clipboards(wm: &Wm, runtime: &Path) {
 
 /// swayidle runs on wm, once per seat: seat 0 goes idle while seat 1 keeps
 /// working, and comes back with its own input.
-fn idle_per_seat(wm: &Wm, dir: &Path, runtime: &Path) {
+fn idle_per_seat(wm: &Wm, dir: &Path) {
     if !on_path("swayidle") {
         eprintln!("idle skipped: needs swayidle");
         return;
     }
-    let display = wm.sock.file_name().unwrap().to_string_lossy();
-    let display = display.strip_prefix("wm.").unwrap().strip_suffix(".sock").unwrap().to_string();
     let tree = wm.tree();
     let file = |name: &str| dir.join(name);
     let swayidle = |s: usize| {
         let name = seat(&tree, s)["name"].as_str().unwrap().to_string();
         let (idle, back) = (file(&format!("idle{s}")), file(&format!("back{s}")));
-        let child = Command::new("swayidle")
+        let child = wm
+            .client("swayidle")
             .args(["-S", &name, "timeout", "1"])
             .arg(format!("touch {}", idle.display()))
             .arg("resume")
             .arg(format!("touch {}", back.display()))
-            .env("XDG_RUNTIME_DIR", runtime)
-            .env("WAYLAND_DISPLAY", &display)
             .stderr(fs::File::create(file(&format!("swayidle{s}.log"))).unwrap())
             .process_group(0)
             .spawn()
@@ -1068,11 +1044,7 @@ fn idle_per_seat(wm: &Wm, dir: &Path, runtime: &Path) {
 /// the first wm's token); seat 1 doesn't move. The app presenting itself
 /// with no fresh input moves nothing.
 fn activation(wm: &Wm, dir: &Path) {
-    let gtk = Command::new("python3")
-        .args(["-c", "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk"])
-        .status()
-        .is_ok_and(|s| s.success());
-    if !gtk || std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
+    if !has_gtk4() || std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
         eprintln!("activation: skipped, needs python3 with GTK 4 and a session bus");
         return;
     }
@@ -1102,12 +1074,7 @@ app.run([])
     .unwrap();
     let run = format!("env GDK_BACKEND=wayland python3 {}", script.display());
     wm.msg(&format!("seat 0 spawn {run}"));
-    let find = |tree: &Value| -> Option<Value> {
-        tree["workspaces"].as_array().unwrap().iter()
-            .flat_map(|ws| ws["windows"].as_array().unwrap().iter())
-            .find(|w| w["title"] == "e2e-activate").cloned()
-    };
-    let window = wait_for("the app's window", || find(&wm.tree()));
+    let window = wait_for("the app's window", || titled(&wm.tree(), "e2e-activate"));
     let (id, home) = (window["id"].as_u64(), window["workspace"].clone());
     wait_for("seat 0 on it", || (focus(&wm.tree(), 0) == id).then_some(()));
     let theirs = |tree: &Value| (seat(tree, 1)["workspace"].clone(), focus(tree, 1));
@@ -1175,11 +1142,7 @@ fn focus_previous(wm: &Wm) {
 /// in its layout (refusing what it can't type), combos, right and double
 /// clicks, wheel notches, a drag, and going to a window by id.
 fn remote_input(wm: &Wm, dir: &Path) {
-    let gtk = Command::new("python3")
-        .args(["-c", "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk"])
-        .status()
-        .is_ok_and(|s| s.success());
-    if !gtk {
+    if !has_gtk4() {
         eprintln!("agent input: skipped, needs python3 with GTK 4");
         return;
     }
@@ -1227,13 +1190,8 @@ GLib.MainLoop().run()
         ),
     )
     .unwrap();
-    let find = |tree: &Value| -> Option<Value> {
-        tree["workspaces"].as_array().unwrap().iter()
-            .flat_map(|ws| ws["windows"].as_array().unwrap().iter())
-            .find(|w| w["title"] == "e2e-agent").cloned()
-    };
     let pid = spawn_tracked(wm, 1, dir, "agent", &format!("env GDK_BACKEND=wayland python3 {}", script.display()));
-    let window = wait_for("the app's window", || find(&wm.tree()));
+    let window = wait_for("the app's window", || titled(&wm.tree(), "e2e-agent"));
     let id = window["id"].as_u64();
     wait_for("seat 1 on it", || (focus(&wm.tree(), 1) == id).then_some(()));
     let read = |name: &str| wait_for(name, || fs::read_to_string(out(name)).ok());
@@ -1252,7 +1210,7 @@ GLib.MainLoop().run()
 
     // The pointer, low in the window: the drawing area.
     let tree = wm.tree();
-    let window = find(&tree).unwrap();
+    let window = titled(&tree, "e2e-agent").unwrap();
     let (x, y) = centre(&tree, 1, &window);
     let y = y + window["height"].as_i64().unwrap() / 4;
     wm.msg(&format!("seat 1 click right {x} {y}"));

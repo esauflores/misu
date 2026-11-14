@@ -28,7 +28,7 @@ fn render_node(renderer: &GlesRenderer) -> Option<DrmNode> {
 
 impl State {
     /// Frame callbacks to every live window (off-screen seats' too, on their
-    /// screen's output, else `fallback`) and layer surface.
+    /// screen's output, else `fallback`), layer surface and lock surface.
     fn send_frames(&self, fallback: &Output, throttle: Duration) {
         let elapsed = self.start_time.elapsed();
         for window in self.live_windows() {
@@ -39,6 +39,7 @@ impl State {
             window.send_frame(output, elapsed, Some(throttle), |_, _| Some(output.clone()));
         }
         self.layers_frame(elapsed, Some(throttle));
+        self.lock_frame(elapsed, Some(throttle));
     }
 
     /// After drawing: spaces refreshed, closed popups gone, clients told.

@@ -560,7 +560,7 @@ impl State {
             .collect();
         json!({
             "wayland_display": self.socket_name.to_string_lossy(),
-            "x_display": self.xwayland.as_ref().map(|x| x.display.clone()),
+            "x_display": self.xwayland,
             "locked": self.is_locked(),
             "screens": screens,
             "workspaces": workspaces,

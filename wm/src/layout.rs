@@ -19,6 +19,7 @@ use smithay::{
     desktop::Window,
     reexports::wayland_protocols::xdg::shell::server::xdg_toplevel,
     utils::{Logical, Point, Rectangle, Size},
+    wayland::shell::xdg::ToplevelStateSet,
 };
 
 pub const GAP: i32 = 12;
@@ -45,11 +46,7 @@ impl Tile for Window {
         if let Some(toplevel) = self.toplevel() {
             toplevel.with_pending_state(|s| {
                 s.size = Some(size);
-                if fullscreen {
-                    s.states.set(xdg_toplevel::State::Fullscreen);
-                } else {
-                    s.states.unset(xdg_toplevel::State::Fullscreen);
-                }
+                set_fullscreen_state(&mut s.states, fullscreen);
             });
             // Before its first commit the window gets this size with its
             // initial configure (see `commit` in handlers.rs).
@@ -62,6 +59,11 @@ impl Tile for Window {
     fn size(&self) -> Size<i32, Logical> {
         self.geometry().size
     }
+}
+
+/// A toplevel's full-screen state, on or off.
+pub fn set_fullscreen_state(states: &mut ToplevelStateSet, on: bool) {
+    if on { states.set(xdg_toplevel::State::Fullscreen) } else { states.unset(xdg_toplevel::State::Fullscreen) };
 }
 
 struct Column<W> {
