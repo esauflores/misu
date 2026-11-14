@@ -64,7 +64,7 @@ use smithay::{
 use crate::{
     Config,
     ipc::Events,
-    layout::{Direction, Workspace},
+    layout::{Anim, Direction, Workspace},
 };
 
 /// Set for the processes a seat starts (to the seat's index), and inherited
@@ -416,6 +416,32 @@ impl State {
     /// Whether a screen shows `seat`: one it looks at.
     pub fn is_shown(&self, seat: usize) -> bool {
         self.shown().any(|(_, _, s)| s == Some(seat))
+    }
+
+    /// Screen `id` shows `ws` now, through `viewer`: the workspace it slides
+    /// from and how far down `ws` still is, while it does. Going to a later
+    /// workspace, the new one comes up from below; to an earlier one, down
+    /// from above.
+    pub fn slide(&mut self, id: ScreenId, ws: WorkspaceId, viewer: usize, now: Instant) -> Option<(WorkspaceId, f64)> {
+        let animate = self.seats.list.get(viewer).is_some_and(|s| s.animate);
+        let height = self.screen_size(id).h as f64;
+        let screen = self.screens.get_mut(&id)?;
+        if screen.shown != Some(ws) {
+            let from = screen.shown.replace(ws);
+            let index = |w: WorkspaceId| screen.workspaces.iter().position(|&x| x == w);
+            screen.slide = from.filter(|_| animate).and_then(|from| {
+                let down = index(ws)? > index(from)?;
+                let mut anim = Anim::new(if down { height } else { -height });
+                anim.set(0.0, now, true);
+                Some((from, anim))
+            });
+        }
+        let (from, anim) = screen.slide.as_ref()?;
+        if anim.is_done(now) || !self.workspaces.contains_key(from) {
+            screen.slide = None;
+            return None;
+        }
+        Some((*from, anim.value(now)))
     }
 
     /// Whether `seat`'s changes animate: it has them on and a screen shows it.
@@ -1068,13 +1094,17 @@ pub struct Screen {
     /// What it shows, with its own output at (0, 0); see
     /// `State::update_space`.
     pub space: Space<Window>,
+    /// The workspace it showed last frame, and the slide from it to the
+    /// one it shows now: how far down that one still is.
+    pub shown: Option<WorkspaceId>,
+    pub slide: Option<(WorkspaceId, Anim)>,
 }
 
 impl Screen {
     pub fn new(id: ScreenId, identity: String, output: Output, workspaces: Vec<WorkspaceId>) -> Self {
         let mut space = Space::default();
         space.map_output(&output, (0, 0));
-        Self { id, identity, output, workspaces, viewer: None, space }
+        Self { id, identity, output, workspaces, viewer: None, space, shown: None, slide: None }
     }
 
     /// The 1-based number of `ws` here.

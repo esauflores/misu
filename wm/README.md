@@ -21,6 +21,9 @@ built around several seats on one screen:
 - **Animations are per seat**: a seat's changes animate when it has them on
   and it is the one on screen; everything else happens at once. A change in
   the middle of an animation carries on from where it is, never restarts.
+  Switching workspaces slides: a later one comes up from below, an earlier
+  one down from above. A full-screen window covering the screen shows alone,
+  without its neighbours' borders at its edges.
 - **Screens are numbered** (1, 2, …) and recognised by make, model and serial
   (plus the connector for identical twins or a missing serial), so a monitor
   plugged back in, into any port, gets its number and workspaces back.

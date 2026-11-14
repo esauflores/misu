@@ -25,7 +25,7 @@ use smithay::{
         },
     },
     desktop::layer_map_for_output,
-    utils::{Physical, Rectangle, Scale, Size, Transform},
+    utils::{Physical, Point, Rectangle, Scale, Size, Transform},
     wayland::shell::wlr_layer::Layer,
 };
 
@@ -81,7 +81,7 @@ impl State {
         let screen = self.screen_of(ws);
         let size = screen.map_or_else(|| self.workspaces[&ws].size(), |id| self.screen_size(id));
         let size: Size<i32, Physical> = (size.w.max(1), size.h.max(1)).into();
-        let elements = self.view_elements(renderer, ws, seat, screen, true, now);
+        let elements = self.view_elements(renderer, ws, seat, screen, None, now);
         let pixels = render_rgba(renderer, size, &elements)?;
         write_png(path, size.w as u32, size.h as u32, &pixels)?;
         Ok(json!({ "path": path, "width": size.w, "height": size.h }))
@@ -94,24 +94,25 @@ impl State {
         if self.is_locked() {
             return self.lock_elements(renderer, id);
         }
-        self.view_elements(renderer, ws, viewer.unwrap_or(NOBODY), Some(id), true, now)
+        let viewer = viewer.unwrap_or(NOBODY);
+        let slide = self.slide(id, ws, viewer, now);
+        self.view_elements(renderer, ws, viewer, Some(id), slide, now)
     }
 
     /// Workspace `ws` as seat `viewer` sees it, with `screen`'s layer
-    /// surfaces, front to back: pointers (if `pointers`),
-    /// layers above the windows, the windows, layers below.
+    /// surfaces, front to back: pointers, layers above the windows, the
+    /// windows, layers below. Mid-`slide` (the workspace it leaves, and how
+    /// far down `ws` still is), both workspaces' windows, a screen apart.
     pub fn view_elements(
         &mut self,
         renderer: &mut GlesRenderer,
         ws: WorkspaceId,
         viewer: usize,
         screen: Option<ScreenId>,
-        pointers: bool,
+        slide: Option<(WorkspaceId, f64)>,
         now: Instant,
     ) -> Vec<ShotElement> {
-        let scale = Scale::from(1.0);
-        let mut elements: Vec<ShotElement> =
-            if pointers { self.pointers_of(renderer, ws, viewer, now) } else { Vec::new() };
+        let mut elements = self.pointers_of(renderer, ws, viewer, now);
         // A full-screen window covering the screen hides the bar.
         let covered = self.workspaces[&ws].covered(viewer, now);
         let layers = |renderer: &mut GlesRenderer, upper: bool| -> Vec<ShotElement> {
@@ -122,12 +123,37 @@ impl State {
                 .filter(|l| matches!(l.layer(), Layer::Overlay | Layer::Top) == upper)
                 .filter(|l| !(covered && l.layer() == Layer::Top))
                 .filter_map(|l| map.layer_geometry(l).map(|geo| (geo.loc, l)))
-                .flat_map(|(loc, l)| l.render_elements::<WaylandSurfaceRenderElement<_>>(renderer, loc.to_physical(1), scale, 1.0))
+                .flat_map(|(loc, l)| l.render_elements::<WaylandSurfaceRenderElement<_>>(renderer, loc.to_physical(1), Scale::from(1.0), 1.0))
                 .map(ShotElement::Surface)
                 .collect()
         };
         elements.extend(layers(renderer, true));
-        let placed: Vec<_> = self.workspaces[&ws].positions(viewer, now).map(|(w, p)| (w.clone(), p)).collect();
+        let below = layers(renderer, false);
+        let dy = slide.map_or(0.0, |(_, dy)| dy);
+        elements.extend(self.window_elements(renderer, ws, viewer, dy.round() as i32, covered, now));
+        if let Some((from, dy)) = slide {
+            let height = self.workspaces[&ws].size().h as f64;
+            let dy = dy - height.copysign(dy);
+            elements.extend(self.window_elements(renderer, from, viewer, dy.round() as i32, false, now));
+        }
+        elements.extend(below);
+        elements
+    }
+
+    /// The windows of `ws` and their borders as `viewer` sees them, `dy`
+    /// lower.
+    fn window_elements(&mut self, renderer: &mut GlesRenderer, ws: WorkspaceId, viewer: usize, dy: i32, covered: bool, now: Instant) -> Vec<ShotElement> {
+        let scale = Scale::from(1.0);
+        let mut elements = Vec::new();
+        let workspace = &self.workspaces[&ws];
+        let placed: Vec<_> = workspace
+            .positions(viewer, now)
+            // Covered, only the full-screen window and dialogs show: the
+            // neighbours' borders reach into its edges, and would show
+            // through a translucent one.
+            .filter(|(w, _)| !covered || workspace.is_fullscreen(w) || workspace.is_floating(w))
+            .map(|(w, p)| (w.clone(), p + Point::from((0, dy))))
+            .collect();
         for (window, loc) in placed.into_iter().rev() {
             // Its border, then it: a window over it (a full-screen one, a
             // dialog) covers both.
@@ -138,7 +164,6 @@ impl State {
                 window.render_elements::<WaylandSurfaceRenderElement<_>>(renderer, at, scale, 1.0).into_iter().map(ShotElement::Surface),
             );
         }
-        elements.extend(layers(renderer, false));
         elements
     }
 }
