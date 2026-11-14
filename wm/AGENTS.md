@@ -104,13 +104,11 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/backend/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
 | `src/backend/dmabuf.rs` | linux-dmabuf: formats, deferred imports |
 | `src/backend/shot.rs` | the scene both backends draw; a seat's view drawn off screen, as a PNG |
-| `src/protocols/handlers.rs` | Wayland protocol handlers |
+| `src/protocols/handlers.rs` | Wayland protocol handlers; clipboards (primary selection, wlr/ext data control); ext-idle-notify, per seat |
 | `src/protocols/layers.rs` | layer shell: bars, launchers, their room and focus |
 | `src/protocols/capture.rs` | ext-image-copy-capture, foreign toplevel list |
 | `src/protocols/decorations.rs` | xdg-decoration (always server side), borders, `colors` |
-| `src/protocols/clipboard.rs` | primary selection, wlr/ext data control |
 | `src/protocols/activation.rs` | xdg-activation: per-seat tokens, `State::activate` |
-| `src/protocols/idle.rs` | ext-idle-notify, per seat |
 | `src/protocols/lock.rs` | ext-session-lock: lock surfaces, input and drawing while locked |
 | `src/protocols/xwayland.rs` | xwayland-satellite: display, `DISPLAY`, restarts |
 | `tests/unit.rs`, `tests/e2e.rs` | tests |
@@ -249,12 +247,12 @@ by Misu's install.sh):
   its own locker (`tests/locker.rs`, wayland-client) through lock,
   refusal, crash, takeover and unlock. Not yet: a subscription event for
   the lock (`tree` has `locked`).
-- Clipboard (done): `clipboard.rs` adds primary selection and both data
+- Clipboard (done): `Clipboard` in `handlers.rs` adds primary selection and both data
   controls (wlr, ext, with primary) over smithay's per-seat selections;
   `focus_changed` sets the primary focus with the data device's. History
   stays out of wm (cliphist from the session's `startup`). The e2e run
   copies and pastes per seat with wl-clipboard.
-- Idle notify (done): `idle.rs`; `seat_active` on every keyboard,
+- Idle notify (done): in `handlers.rs`; `seat_active` on every keyboard,
   motion, button and axis input (devices and `wm msg`), per seat. The e2e
   run starts swayidle on each seat and checks seat 0 idles while seat 1
   moves, then resumes. No idle inhibit yet (Misu never idles out).

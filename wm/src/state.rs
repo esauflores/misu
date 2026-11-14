@@ -135,10 +135,10 @@ pub struct State {
     pub data_device_state: DataDeviceState,
     /// xdg-activation tokens (see `activation.rs`).
     pub activation: smithay::wayland::xdg_activation::XdgActivationState,
-    /// Idle notify, per seat (see `idle.rs`).
+    /// Idle notify, per seat (see `handlers.rs`).
     pub idle: smithay::wayland::idle_notify::IdleNotifierState<Self>,
-    /// Primary selection and data control (see `clipboard.rs`).
-    pub clipboard: crate::protocols::clipboard::Clipboard,
+    /// Primary selection and data control (see `handlers.rs`).
+    pub clipboard: crate::protocols::handlers::Clipboard,
     pub popups: PopupManager,
 }
 
@@ -162,13 +162,13 @@ impl State {
             shots: Vec::new(),
             spawned: HashMap::new(),
             capture: crate::protocols::capture::Capture::new(&dh),
-            decorations: crate::protocols::decorations::new_state(&dh),
+            decorations: smithay::wayland::shell::xdg::decoration::XdgDecorationState::new::<State>(&dh),
             xwayland: None,
             cursors: crate::input::cursor::Cursors::default(),
             input_generation: 0,
             screen_generation: 0,
             lid_closed: false,
-            session_lock: crate::protocols::lock::new_state(&dh),
+            session_lock: smithay::wayland::session_lock::SessionLockManagerState::new::<State, _>(&dh, |_| true),
             locked: None,
             _cursor_shape: smithay::wayland::cursor_shape::CursorShapeManagerState::new::<Self>(&dh),
             _viewporter: smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh),
@@ -178,7 +178,7 @@ impl State {
             shm_state: ShmState::new::<Self>(&dh, vec![]),
             _output_manager_state: OutputManagerState::new_with_xdg_output::<Self>(&dh),
             data_device_state: DataDeviceState::new::<Self>(&dh),
-            clipboard: crate::protocols::clipboard::Clipboard::new(&dh),
+            clipboard: crate::protocols::handlers::Clipboard::new(&dh),
             activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Self>(&dh),
             idle: smithay::wayland::idle_notify::IdleNotifierState::new(&dh, event_loop.handle()),
             popups: PopupManager::default(),
@@ -439,12 +439,18 @@ impl State {
         self.workspaces.iter().find(|(_, w)| w.contains(window)).map(|(&id, _)| id)
     }
 
+    /// Every window in a workspace.
+    pub fn windows(&self) -> impl Iterator<Item = &Window> {
+        self.workspaces.values().flat_map(Workspace::windows)
+    }
+
+    /// The seats that have `window` focused.
+    pub fn focusing<'a>(&'a self, window: &'a Window) -> impl Iterator<Item = usize> + 'a {
+        self.seats.list.iter().enumerate().filter(move |(_, s)| s.focus.as_ref() == Some(window)).map(|(i, _)| i)
+    }
+
     pub fn window_for_surface(&self, surface: &WlSurface) -> Option<Window> {
-        self.workspaces
-            .values()
-            .flat_map(|w| w.windows())
-            .find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface))
-            .cloned()
+        self.windows().find(|w| w.toplevel().is_some_and(|t| t.wl_surface() == surface)).cloned()
     }
 
     /// The surface under `pos` in `seat`'s view of its own workspace, which
@@ -545,9 +551,7 @@ impl State {
             && let Some(ws) = self.workspace_of(&parent)
         {
             self.ws(ws).add_float(window.clone(), Some(&parent));
-            let seat = (0..self.seats.list.len())
-                .find(|&s| self.seats[s].focus.as_ref() == Some(&parent))
-                .unwrap_or_else(|| self.home_seat(&window));
+            let seat = self.focusing(&parent).next().unwrap_or_else(|| self.home_seat(&window));
             if self.seats[seat].workspace == ws {
                 self.focus(seat, Some(window), true);
             } else {
@@ -579,12 +583,11 @@ impl State {
         }
         let seats: Vec<usize> = match by {
             Some(seat) => vec![seat],
-            None => (0..self.seats.list.len()).filter(|&s| self.seats[s].focus.as_ref() == Some(window)).collect(),
+            None => self.focusing(window).collect(),
         };
         for seat in seats {
             if self.seats[seat].workspace == ws {
-                let animate = self.animates(seat);
-                self.ws(ws).reveal(seat, window, now, animate);
+                self.reveal(seat, ws, window, now);
             }
         }
     }
@@ -611,10 +614,8 @@ impl State {
         for screen in self.screens.values_mut() {
             screen.space.unmap_elem(window);
         }
-        for seat in 0..self.seats.list.len() {
-            if self.seats[seat].focus.as_ref() == Some(window) {
-                self.focus(seat, next.clone(), false);
-            }
+        for seat in self.focusing(window).collect::<Vec<_>>() {
+            self.focus(seat, next.clone(), false);
         }
     }
 
@@ -626,8 +627,7 @@ impl State {
     pub fn focus(&mut self, seat: usize, window: Option<Window>, reveal: bool) {
         let now = Instant::now();
         if reveal && let Some(w) = &window && let Some(ws) = self.workspace_of(w) {
-            let animate = self.animates(seat);
-            self.ws(ws).reveal(seat, w, now, animate);
+            self.reveal(seat, ws, w, now);
         }
         // A window that closed isn't one to go back to.
         let still_there = self.seats[seat].focus.as_ref().is_some_and(|w| self.workspace_of(w).is_some());
@@ -640,7 +640,6 @@ impl State {
         self.update_activation();
     }
 
-    /// Give `seat`'s keyboard to its layer surface, else its window.
     /// Let go of the grabs of menus that closed. Smithay ends them only
     /// with the seat's next event; until then the keyboard would stay off
     /// the window.
@@ -664,6 +663,7 @@ impl State {
         }
     }
 
+    /// Give `seat`'s keyboard to its layer surface, else its window.
     pub fn update_keyboard(&mut self, seat: usize) {
         let data = &self.seats[seat];
         let surface = match &data.layer_focus {
@@ -691,8 +691,8 @@ impl State {
 
     /// A window is shown active while any seat has it focused.
     fn update_activation(&self) {
-        for window in self.workspaces.values().flat_map(|w| w.windows()) {
-            let focused = self.seats.list.iter().any(|s| s.focus.as_ref() == Some(window));
+        for window in self.windows() {
+            let focused = self.focusing(window).next().is_some();
             if window.set_activated(focused) && let Some(t) = window.toplevel() && t.is_initial_configure_sent() {
                 t.send_pending_configure();
             }
@@ -725,9 +725,8 @@ impl State {
     /// Focus the first or last column of `seat`'s workspace.
     pub fn focus_end(&mut self, seat: usize, last: bool) {
         let ws = &self.workspaces[&self.seats[seat].workspace];
-        let target = if last { ws.last() } else { ws.first() };
-        if target.is_some() {
-            self.focus(seat, target, true);
+        if let Some(target) = if last { ws.last() } else { ws.first() } {
+            self.focus(seat, Some(target), true);
         }
     }
 
@@ -737,8 +736,13 @@ impl State {
         let Some(ws) = self.workspace_of(&window) else { return };
         let animate = self.animates_workspace(ws);
         self.ws(ws).move_column(&window, dir, now, animate);
+        self.reveal(seat, ws, &window, now);
+    }
+
+    /// Scroll `seat`'s view of workspace `ws` to `window`.
+    fn reveal(&mut self, seat: usize, ws: WorkspaceId, window: &Window, now: Instant) {
         let animate = self.animates(seat);
-        self.ws(ws).reveal(seat, &window, now, animate);
+        self.ws(ws).reveal(seat, window, now, animate);
     }
 
     // Workspaces

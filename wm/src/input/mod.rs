@@ -71,12 +71,6 @@ enum KeyboardAction {
 }
 
 impl State {
-    /// Input from the host's devices, on `screen`, for the seat it drives.
-    pub fn process_input_event<I: InputBackend>(&mut self, event: InputEvent<I>, screen: ScreenId) {
-        let seat = self.seats.active;
-        self.process_seat_input_event(event, seat, screen);
-    }
-
     /// Input from a device assigned to a particular user seat.
     pub fn process_seat_input_event<I: InputBackend>(&mut self, event: InputEvent<I>, seat: usize, screen: ScreenId) {
         match event {
@@ -111,13 +105,18 @@ impl State {
                         frame = frame.stop(axis);
                     }
                 }
-                self.refresh_pointer(seat, Event::time(&event));
-                let pointer = self.seats[seat].seat.get_pointer().unwrap();
-                pointer.axis(self, frame);
-                pointer.frame(self);
+                self.pointer_axis(seat, frame, Event::time(&event));
             }
             _ => {}
         }
+    }
+
+    /// Scroll `seat`'s pointer by `frame`.
+    pub(crate) fn pointer_axis(&mut self, seat: usize, frame: AxisFrame, time: InputTime) {
+        self.refresh_pointer(seat, time);
+        let pointer = self.seats[seat].seat.get_pointer().unwrap();
+        pointer.axis(self, frame);
+        pointer.frame(self);
     }
 
     /// Returns a requested VT switch for the DRM backend to execute.

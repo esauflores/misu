@@ -4,7 +4,6 @@ use std::time::{Duration, Instant};
 
 use smithay::{
     backend::{
-        egl::EGLDevice,
         renderer::{
             ImportDma,
             damage::OutputDamageTracker,
@@ -17,16 +16,16 @@ use smithay::{
     utils::{Rectangle, Transform},
 };
 
-use crate::state::{State, new_output};
-
-pub(crate) const BACKGROUND: [f32; 4] = [0.08, 0.08, 0.1, 1.0];
+use crate::{
+    backend::{BACKGROUND, render_node},
+    state::{State, new_output},
+};
 
 pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), Box<dyn std::error::Error>> {
     let (mut backend, winit) = winit::init::<GlesRenderer>()?;
     // wm draws each seat's cursor; the host's would be one more.
     backend.window().set_cursor_visible(false);
-    let node = EGLDevice::device_for_display(backend.renderer().egl_context().display())
-        .and_then(|device| device.try_get_render_node()).ok().flatten();
+    let node = render_node(backend.renderer());
     state.dmabuf.enable(&state.display_handle, 0, node, backend.renderer().dmabuf_formats())?;
     let output = new_output("winit", "nested", "0", backend.window_size());
     let _global = output.create_global::<State>(&state.display_handle);
@@ -40,7 +39,7 @@ pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), 
             output.change_current_state(Some(Mode { size, refresh: 60_000 }), None, None, None);
             state.resize_screen(screen);
         }
-        WinitEvent::Input(event) => state.process_input_event(event, screen),
+        WinitEvent::Input(event) => state.process_seat_input_event(event, state.seats.active, screen),
         WinitEvent::Redraw => {
             let now = Instant::now();
             state.dmabuf.process_imports(|dmabuf| backend.renderer().import_dmabuf(dmabuf, None).is_ok());
@@ -58,17 +57,8 @@ pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), 
             }
             state.take_shots(backend.renderer());
 
-            let elapsed = state.start_time.elapsed();
-            // Off-screen seats' windows keep drawing too.
-            for window in state.live_windows() {
-                window.send_frame(&output, elapsed, Some(Duration::ZERO), |_, _| Some(output.clone()));
-            }
-            state.layers_frame(elapsed, Some(Duration::ZERO));
-            for screen in state.screens.values_mut() {
-                screen.space.refresh();
-            }
-            state.popups.cleanup();
-            let _ = state.display_handle.flush_clients();
+            state.send_frames(&output, Duration::ZERO);
+            state.after_frame();
             // The host paces frames; keep asking for them.
             backend.window().request_redraw();
         }

@@ -26,7 +26,8 @@ use std::time::Duration;
 use smithay::reexports::calloop::timer::{TimeoutAction, Timer};
 
 use crate::{
-    input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT},
+    Modifier,
+    input::{BTN_LEFT, BTN_MIDDLE, BTN_RIGHT, bindings::combo_key},
     state::{State, window_id},
 };
 
@@ -61,28 +62,16 @@ impl Button {
     }
 }
 
-/// `ctrl+shift+t` as the modifier keysyms to hold and the key.
-pub fn parse_combo(combo: &str) -> Result<(Vec<Keysym>, Keysym), String> {
-    let parts: Vec<&str> = combo.split('+').map(str::trim).collect();
-    let (key, held) = parts.split_last().filter(|(k, _)| !k.is_empty()).ok_or(format!("key {combo:?}: no key"))?;
-    let mods = held
-        .iter()
-        .map(|name| match name.to_ascii_lowercase().as_str() {
-            "ctrl" | "control" => Ok(Keysym::Control_L),
-            "shift" => Ok(Keysym::Shift_L),
-            "alt" => Ok(Keysym::Alt_L),
-            "super" | "mod" | "logo" => Ok(Keysym::Super_L),
-            other => Err(format!("key {combo:?}: unknown modifier {other}")),
-        })
-        .collect::<Result<_, _>>()?;
-    let sym = match xkb::keysym_from_name(key, xkb::KEYSYM_NO_FLAGS) {
-        sym if sym.raw() != 0 => sym,
-        _ => xkb::keysym_from_name(key, xkb::KEYSYM_CASE_INSENSITIVE),
-    };
-    if sym.raw() == 0 {
-        return Err(format!("key {combo:?}: no key named {key}"));
-    }
-    Ok((mods, sym))
+/// `ctrl+shift+t` as the modifier keysyms to hold and the key: the
+/// modifiers as a binding reads them (`mod` is `modifier`), the key in its
+/// exact case if there is one.
+pub fn parse_combo(combo: &str, modifier: Modifier) -> Result<(Vec<Keysym>, Keysym), String> {
+    let (mods, lower) = combo_key(combo, modifier).map_err(|err| err.replacen("binding", "key", 1))?;
+    let key = combo.rsplit('+').next().unwrap_or_default().trim();
+    let sym = xkb::keysym_from_name(key, xkb::KEYSYM_NO_FLAGS);
+    let sym = if sym.raw() == 0 { Keysym::new(lower) } else { sym };
+    let held = [(mods.ctrl, Keysym::Control_L), (mods.shift, Keysym::Shift_L), (mods.alt, Keysym::Alt_L), (mods.logo, Keysym::Super_L)];
+    Ok((held.into_iter().filter_map(|(on, sym)| on.then_some(sym)).collect(), sym))
 }
 
 /// The keysym a character types, if any: newline and tab are keys too.
@@ -112,24 +101,20 @@ impl State {
         })
     }
 
-    fn send_key(&mut self, seat: usize, source: KeyboardSource, code: Keycode, state: KeyState) {
-        self.keyboard_input(seat, source, code, state, InputTime::now());
-    }
-
     /// Press `keys` in order, then release them in reverse.
     fn send_chord(&mut self, seat: usize, keys: &[Keycode]) {
         let source = KeyboardSource::new_auxiliary();
         for &code in keys {
-            self.send_key(seat, source, code, KeyState::Pressed);
+            self.keyboard_input(seat, source, code, KeyState::Pressed, InputTime::now());
         }
         for &code in keys.iter().rev() {
-            self.send_key(seat, source, code, KeyState::Released);
+            self.keyboard_input(seat, source, code, KeyState::Released, InputTime::now());
         }
     }
 
     /// `key COMBO`.
     pub fn send_combo(&mut self, seat: usize, combo: &str) -> Result<(), String> {
-        let (mods, sym) = parse_combo(combo)?;
+        let (mods, sym) = parse_combo(combo, self.config.modifier)?;
         let mut keys = Vec::new();
         for sym in mods.into_iter().chain([sym]) {
             let (code, _) = self.key_for(seat, sym).ok_or(format!("key {combo:?}: the layout has no {}", xkb::keysym_get_name(sym)))?;
@@ -230,18 +215,13 @@ impl State {
                 frame = frame.value(axis, n * 15.0).v120(axis, (n * 120.0) as i32);
             }
         }
-        self.refresh_pointer(seat, time);
-        let pointer = self.seats[seat].seat.get_pointer().unwrap();
-        pointer.axis(self, frame);
-        pointer.frame(self);
+        self.pointer_axis(seat, frame, time);
     }
 
     /// `focus-window ID`.
     pub fn focus_window_id(&mut self, seat: usize, id: u64) -> Result<(), String> {
         let window = self
-            .workspaces
-            .values()
-            .flat_map(|w| w.windows())
+            .windows()
             .find(|w| window_id(w) == id)
             .cloned()
             .ok_or(format!("no window {id}"))?;
@@ -256,12 +236,14 @@ mod tests {
 
     #[test]
     fn combos() {
-        assert_eq!(parse_combo("ctrl+shift+t"), Ok((vec![Keysym::Control_L, Keysym::Shift_L], Keysym::t)));
-        assert_eq!(parse_combo("Return"), Ok((vec![], Keysym::Return)));
-        assert_eq!(parse_combo("super+return"), Ok((vec![Keysym::Super_L], Keysym::Return)));
-        assert!(parse_combo("hyper+a").is_err());
-        assert!(parse_combo("ctrl+").is_err());
-        assert!(parse_combo("nokey").is_err());
+        let combo = |c| parse_combo(c, Modifier::Alt);
+        assert_eq!(combo("ctrl+shift+t"), Ok((vec![Keysym::Control_L, Keysym::Shift_L], Keysym::t)));
+        assert_eq!(combo("Return"), Ok((vec![], Keysym::Return)));
+        assert_eq!(combo("super+return"), Ok((vec![Keysym::Super_L], Keysym::Return)));
+        assert_eq!(combo("mod+T"), Ok((vec![Keysym::Alt_L], Keysym::T)), "mod is the configured modifier");
+        assert!(combo("hyper+a").is_err());
+        assert!(combo("ctrl+").is_err());
+        assert!(combo("nokey").is_err());
         assert_eq!(char_keysym('\n'), Keysym::Return);
         assert_eq!(char_keysym('A'), Keysym::A);
     }

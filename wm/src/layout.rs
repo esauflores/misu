@@ -103,15 +103,6 @@ impl<W: Tile> Workspace<W> {
         self.area.size
     }
 
-    pub fn area(&self) -> Rectangle<i32, Logical> {
-        self.area
-    }
-
-    /// Lay out again for a whole screen of this size.
-    pub fn resize(&mut self, size: Size<i32, Logical>, now: Instant, animate: bool) {
-        self.set_area(Rectangle::from_size(size), size, now, animate);
-    }
-
     /// Lay out again in `area` of a screen of size `screen`.
     pub fn set_area(&mut self, area: Rectangle<i32, Logical>, screen: Size<i32, Logical>, now: Instant, animate: bool) {
         if area != self.area || screen != self.screen {

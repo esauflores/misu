@@ -136,7 +136,6 @@ impl State {
     /// The pointers of the seats on workspace `shown`, as seat `viewer`
     /// sees it: each over what it points at in the viewer's view.
     pub fn pointers_of(&mut self, renderer: &mut GlesRenderer, shown: WorkspaceId, viewer: usize, now: Instant) -> Vec<ShotElement> {
-        let mut elements = Vec::new();
         let ws = &self.workspaces[&shown];
         let viewer_view = ws.view(viewer, now);
         let seats: Vec<(usize, Point<f64, Logical>, CursorImageStatus)> = self
@@ -151,20 +150,22 @@ impl State {
                 (i, Point::from((x, pointer.y)), s.cursor.clone())
             })
             .collect();
-        for (index, at, status) in seats {
-            self.pointer_element(renderer, index, at, status, &mut elements);
-        }
-        elements
+        self.pointer_elements(renderer, seats)
     }
 
     /// The pointers of the seats on screen `id` while locked: where they
     /// are on it, with no view to scroll.
     pub fn screen_pointers(&mut self, renderer: &mut GlesRenderer, id: crate::state::ScreenId) -> Vec<ShotElement> {
-        let mut elements = Vec::new();
         let seats: Vec<(usize, Point<f64, Logical>, CursorImageStatus)> = (0..self.seats.list.len())
             .filter(|&i| self.screen_for(i) == Some(id))
             .map(|i| (i, self.seats[i].seat.get_pointer().unwrap().current_location(), self.seats[i].cursor.clone()))
             .collect();
+        self.pointer_elements(renderer, seats)
+    }
+
+    /// Each `(seat, at, status)`'s pointer drawn.
+    fn pointer_elements(&mut self, renderer: &mut GlesRenderer, seats: Vec<(usize, Point<f64, Logical>, CursorImageStatus)>) -> Vec<ShotElement> {
+        let mut elements = Vec::new();
         for (index, at, status) in seats {
             self.pointer_element(renderer, index, at, status, &mut elements);
         }

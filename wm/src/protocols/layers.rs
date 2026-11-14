@@ -15,10 +15,10 @@
 use std::time::Duration;
 
 use smithay::{
-    desktop::{LayerSurface, PopupKind, WindowSurfaceType, find_popup_root_surface, get_popup_toplevel_coords, layer_map_for_output},
+    desktop::{LayerSurface, WindowSurfaceType, layer_map_for_output},
     output::Output,
     reexports::wayland_server::protocol::{wl_output::WlOutput, wl_surface::WlSurface},
-    utils::{Logical, Point, Rectangle},
+    utils::{Logical, Point},
     wayland::{
         compositor::with_states,
         shell::{
@@ -55,15 +55,11 @@ impl WlrLayerShellHandler for State {
     }
 
     fn new_popup(&mut self, _parent: WlrLayerSurface, popup: PopupSurface) {
-        self.unconstrain_layer_popup(&popup);
+        self.unconstrain_popup(&popup);
     }
 
     fn layer_destroyed(&mut self, surface: WlrLayerSurface) {
-        let found = self.screens.values().find_map(|s| {
-            let map = layer_map_for_output(&s.output);
-            map.layers().find(|l| l.layer_surface() == &surface).cloned().map(|l| (s.id, l))
-        });
-        if let Some((id, layer)) = found {
+        if let Some((id, layer)) = self.layer_of(surface.wl_surface()) {
             layer_map_for_output(&self.screens[&id].output).unmap_layer(&layer);
             self.release_layer(&layer);
             self.resize_screen(id);
@@ -162,19 +158,5 @@ impl State {
                 layer.send_frame(output, time, throttle, |_, _| Some(output.clone()));
             }
         }
-    }
-
-    /// Keep a layer surface's popup on its screen.
-    pub fn unconstrain_layer_popup(&self, popup: &PopupSurface) {
-        let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else { return };
-        let Some((id, layer)) = self.layer_of(&root) else { return };
-        let map = layer_map_for_output(&self.screens[&id].output);
-        let Some(geometry) = map.layer_geometry(&layer) else { return };
-        let mut target = Rectangle::from_size(self.screens[&id].size());
-        target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
-        target.loc -= geometry.loc;
-        popup.with_pending_state(|state| {
-            state.geometry = state.positioner.get_unconstrained_geometry(target);
-        });
     }
 }

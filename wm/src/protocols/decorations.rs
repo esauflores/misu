@@ -20,7 +20,7 @@ use smithay::{
     utils::{Logical, Point, Rectangle},
     wayland::shell::xdg::{
         ToplevelSurface,
-        decoration::{XdgDecorationHandler, XdgDecorationState},
+        decoration::XdgDecorationHandler,
     },
 };
 
@@ -79,7 +79,7 @@ impl State {
         if fullscreen {
             return Vec::new();
         }
-        let seat = self.seats.list.iter().position(|s| s.focus.as_ref() == Some(window));
+        let seat = self.focusing(window).next();
         let color = seat.map_or(self.config.colors.inactive, |s| self.config.colors.seat(s));
         let size = window.geometry().size;
         let (x, y, w, h, b) = (loc.x, loc.y, size.w, size.h, BORDER);
@@ -124,8 +124,4 @@ fn server_side(toplevel: &ToplevelSurface) {
     if toplevel.is_initial_configure_sent() {
         toplevel.send_pending_configure();
     }
-}
-
-pub fn new_state(dh: &smithay::reexports::wayland_server::DisplayHandle) -> XdgDecorationState {
-    XdgDecorationState::new::<State>(dh)
 }

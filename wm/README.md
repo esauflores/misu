@@ -233,7 +233,7 @@ logs and a screenshot in `target/tmp/e2e/`.
 - `src/backend/winit.rs`: the nested backend and rendering
 - `src/backend/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices
 - `src/protocols/layers.rs`: the layer shell: bars and launchers, their room and focus
-- `src/protocols/handlers.rs`: Wayland protocol handlers
+- `src/protocols/handlers.rs`: Wayland protocol handlers, the clipboards and idle notify
 - `tests/unit.rs`, `tests/e2e.rs`: see Tests
 
 ## Next

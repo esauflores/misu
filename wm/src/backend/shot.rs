@@ -5,7 +5,6 @@
 //! screen, and the reply waits for it.
 
 use std::{
-    io::Write,
     os::unix::net::UnixStream,
     path::{Path, PathBuf},
     time::Instant,
@@ -31,7 +30,8 @@ use smithay::{
 };
 
 use crate::{
-    backend::winit::BACKGROUND,
+    backend::BACKGROUND,
+    ipc::reply,
     state::{NOBODY, ScreenId, State, WorkspaceId},
 };
 
@@ -60,7 +60,7 @@ impl State {
             } else {
                 self.shoot(renderer, shot.seat, &shot.path)
             };
-            reply(shot.stream, result);
+            let _ = reply(&shot.stream, result);
         }
         self.take_captures(renderer);
         self.lock_frame_done();
@@ -69,7 +69,7 @@ impl State {
     /// Answer the screenshots asked for with `error` (no renderer now).
     pub fn fail_shots(&mut self, error: &str) {
         for shot in std::mem::take(&mut self.shots) {
-            reply(shot.stream, Err(error.into()));
+            let _ = reply(&shot.stream, Err(error.into()));
         }
         self.fail_captures();
     }
@@ -90,13 +90,10 @@ impl State {
     /// What screen `id` shows: its viewer's view, or (unplugged, `wm msg
     /// screen-remove`) nothing but the background.
     pub fn screen_elements(&mut self, renderer: &mut GlesRenderer, id: ScreenId, now: Instant) -> Vec<ShotElement> {
-        if !self.connected.contains(&id) {
-            return Vec::new();
-        }
+        let Some((ws, viewer)) = self.shown_on(id) else { return Vec::new() };
         if self.is_locked() {
             return self.lock_elements(renderer, id);
         }
-        let Some((ws, viewer)) = self.shown_on(id) else { return Vec::new() };
         self.view_elements(renderer, ws, viewer.unwrap_or(NOBODY), Some(id), true, now)
     }
 
@@ -172,10 +169,3 @@ fn write_png(path: &Path, width: u32, height: u32, pixels: &[u8]) -> Result<(), 
     writer.write_image_data(pixels).map_err(|err| err.to_string())
 }
 
-fn reply(mut stream: UnixStream, result: Result<Value, String>) {
-    let reply = match result {
-        Ok(value) => json!({ "ok": true, "result": value }),
-        Err(error) => json!({ "ok": false, "error": error }),
-    };
-    let _ = writeln!(stream, "{reply}");
-}

@@ -140,7 +140,7 @@ impl State {
             return self.screens.values().find(|s| s.output == output).map(|s| Target::Screen(s.id));
         }
         let handle = source.user_data().get::<ForeignToplevelWeakHandle>()?.upgrade()?;
-        let window = self.workspaces.values().flat_map(|ws| ws.windows()).find(|w| {
+        let window = self.windows().find(|w| {
             w.user_data()
                 .get::<ToplevelHandle>()
                 .is_some_and(|slot| slot.0.lock().unwrap().as_ref().is_some_and(|h| h.matches(&handle)))

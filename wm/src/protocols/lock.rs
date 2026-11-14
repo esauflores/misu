@@ -128,7 +128,7 @@ impl State {
         }
     }
 
-    /// Screen `id`'s size, for its lock surface.
+    /// The size of `output`'s screen, for its lock surface.
     fn lock_size(&self, output: &Output) -> Option<(u32, u32)> {
         let screen = self.screens.values().find(|s| &s.output == output)?;
         let size = screen.size();
@@ -162,7 +162,7 @@ impl SessionLockHandler for State {
         let owner = confirmation.ext_session_lock().clone();
         // Taking over a dead locker's lock: locked already, so no frame to wait for.
         let frames = if taking_over { 0 } else { FRAMES_BEFORE_CONFIRMING };
-        self.locked = Some(Lock { owner, confirm: Some((confirmation, frames.max(1))), surfaces: Vec::new() });
+        self.locked = Some(Lock { owner, confirm: Some((confirmation, frames)), surfaces: Vec::new() });
         tracing::info!("locking the session{}", if taking_over { " (a new locker took over)" } else { "" });
         self.relock_input();
     }
@@ -188,8 +188,4 @@ impl SessionLockHandler for State {
         lock.surfaces.push((output, surface));
         self.relock_input();
     }
-}
-
-pub fn new_state(dh: &smithay::reexports::wayland_server::DisplayHandle) -> SessionLockManagerState {
-    SessionLockManagerState::new::<State, _>(dh, |_| true)
 }

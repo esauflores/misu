@@ -94,9 +94,7 @@ impl XdgActivationHandler for State {
         if window.user_data().get::<MappedAt>().is_some_and(|m| m.0 > data.timestamp) {
             return;
         }
-        {
-            tracing::info!("seat{seat}: activating a window");
-            self.activate(seat, &window);
-        }
+        tracing::info!("seat{seat}: activating a window");
+        self.activate(seat, &window);
     }
 }

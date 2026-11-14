@@ -1,10 +1,11 @@
 //! Wayland protocol handlers: seats and selections, surfaces (a toplevel
-//! joins the layout with its first buffer), and the xdg shell.
+//! joins the layout with its first buffer), the xdg shell, the clipboards
+//! and idle notify.
 
 use smithay::{
     backend::renderer::utils::on_commit_buffer_handler,
     desktop::{
-        PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Window, find_popup_root_surface,
+        layer_map_for_output, PopupKeyboardGrab, PopupKind, PopupPointerGrab, PopupUngrabStrategy, Window, find_popup_root_surface,
         get_popup_toplevel_coords,
     },
     input::{
@@ -15,7 +16,7 @@ use smithay::{
     reexports::{
         wayland_protocols::xdg::shell::server::xdg_toplevel,
         wayland_server::{
-            Client, Resource,
+            Client, DisplayHandle, Resource,
             protocol::{wl_buffer, wl_output::WlOutput, wl_seat, wl_surface::WlSurface},
         },
     },
@@ -24,11 +25,15 @@ use smithay::{
         buffer::BufferHandler,
         compositor::{CompositorClientState, CompositorHandler, CompositorState, SurfaceAttributes, BufferAssignment, add_blocker, add_pre_commit_hook, get_parent, is_sync_subsurface, with_states},
         dmabuf::get_dmabuf,
+        idle_notify::{IdleNotifierHandler, IdleNotifierState},
         output::OutputHandler,
         pointer_constraints::PointerConstraintsHandler,
         selection::{
             SelectionHandler,
             data_device::{DataDeviceHandler, DataDeviceState, WaylandDndGrabHandler, set_data_device_focus},
+            ext_data_control::{self, DataControlHandler as ExtDataControlHandler},
+            primary_selection::{PrimarySelectionHandler, PrimarySelectionState, set_primary_focus},
+            wlr_data_control::{self, DataControlHandler as WlrDataControlHandler},
         },
         shell::xdg::{PopupSurface, PositionerState, ToplevelSurface, XdgShellHandler, XdgShellState},
         shm::{ShmHandler, ShmState},
@@ -57,7 +62,7 @@ impl SeatHandler for State {
         let dh = &self.display_handle;
         let client = focused.and_then(|s| dh.get_client(s.id()).ok());
         set_data_device_focus(dh, seat, client.clone());
-        smithay::wayland::selection::primary_selection::set_primary_focus(dh, seat, client);
+        set_primary_focus(dh, seat, client);
     }
 }
 
@@ -236,7 +241,6 @@ impl XdgShellHandler for State {
             state.positioner = positioner;
         });
         self.unconstrain_popup(&surface);
-        self.unconstrain_layer_popup(&surface);
         surface.send_repositioned(token);
     }
 
@@ -280,15 +284,22 @@ impl XdgShellHandler for State {
 }
 
 impl State {
-    /// Keep a popup on screen, where its window is headed.
-    fn unconstrain_popup(&self, popup: &PopupSurface) {
-        let Ok(root) = find_popup_root_surface(&PopupKind::Xdg(popup.clone())) else { return };
-        let Some(window) = self.window_for_surface(&root) else { return };
-        let Some(window_loc) = self.target_location(&window) else { return };
-        let Some(ws) = self.workspace_of(&window) else { return };
-        let mut target = Rectangle::from_size(self.workspaces[&ws].size());
-        target.loc -= get_popup_toplevel_coords(&PopupKind::Xdg(popup.clone()));
-        target.loc -= window_loc;
+    /// Keep a popup on screen: in its window's workspace, where the window
+    /// is headed, or on its layer surface's screen.
+    pub(crate) fn unconstrain_popup(&self, popup: &PopupSurface) {
+        let kind = PopupKind::Xdg(popup.clone());
+        let Ok(root) = find_popup_root_surface(&kind) else { return };
+        let (origin, size) = if let Some(window) = self.window_for_surface(&root) {
+            let (Some(at), Some(ws)) = (self.target_location(&window), self.workspace_of(&window)) else { return };
+            (at, self.workspaces[&ws].size())
+        } else if let Some((id, layer)) = self.layer_of(&root) {
+            let Some(geometry) = layer_map_for_output(&self.screens[&id].output).layer_geometry(&layer) else { return };
+            (geometry.loc, self.screens[&id].size())
+        } else {
+            return;
+        };
+        let mut target = Rectangle::from_size(size);
+        target.loc -= get_popup_toplevel_coords(&kind) + origin;
         popup.with_pending_state(|state| {
             state.geometry = state.positioner.get_unconstrained_geometry(target);
         });
@@ -313,5 +324,64 @@ impl State {
         if surface.is_initial_configure_sent() {
             surface.send_configure();
         }
+    }
+}
+
+// The clipboard and the primary selection (select, then middle-click),
+// each seat's own: what one seat copies, another doesn't paste. Clipboard
+// tools (`wl-copy`, `wl-paste --watch cliphist store`) reach a seat's
+// clipboard and selection with no window of their own, through data
+// control (`wlr-data-control` and `ext-data-control`); `wl-paste` takes the
+// first seat unless given `--seat`.
+
+pub struct Clipboard {
+    pub primary: PrimarySelectionState,
+    pub wlr: wlr_data_control::DataControlState,
+    pub ext: ext_data_control::DataControlState,
+}
+
+impl Clipboard {
+    pub fn new(dh: &DisplayHandle) -> Self {
+        let primary = PrimarySelectionState::new::<State>(dh);
+        let wlr = wlr_data_control::DataControlState::new::<State, _>(dh, Some(&primary), |_| true);
+        let ext = ext_data_control::DataControlState::new::<State, _>(dh, Some(&primary), |_| true);
+        Self { primary, wlr, ext }
+    }
+}
+
+impl PrimarySelectionHandler for State {
+    fn primary_selection_state(&mut self) -> &mut PrimarySelectionState {
+        &mut self.clipboard.primary
+    }
+}
+
+impl WlrDataControlHandler for State {
+    fn data_control_state(&mut self) -> &mut wlr_data_control::DataControlState {
+        &mut self.clipboard.wlr
+    }
+}
+
+impl ExtDataControlHandler for State {
+    fn data_control_state(&mut self) -> &mut ext_data_control::DataControlState {
+        &mut self.clipboard.ext
+    }
+}
+
+// Idle notify (`ext-idle-notify`), so an idle daemon (swayidle) can act
+// after a seat has been idle a while, and before sleep. Idle is per seat:
+// input on one seat (an agent's) doesn't make another active. Idle
+// inhibit isn't offered yet.
+
+impl State {
+    /// `seat` had input: it isn't idle.
+    pub fn seat_active(&mut self, seat: usize) {
+        let handle = self.seats[seat].seat.clone();
+        self.idle.notify_activity(&handle);
+    }
+}
+
+impl IdleNotifierHandler for State {
+    fn idle_notifier_state(&mut self) -> &mut IdleNotifierState<Self> {
+        &mut self.idle
     }
 }

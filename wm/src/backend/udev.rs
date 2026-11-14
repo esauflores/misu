@@ -2,7 +2,7 @@
 //! each connector has its own damage-tracked compositor and pending page flip.
 
 use crate::{
-    backend::winit::BACKGROUND,
+    backend::{BACKGROUND, render_node},
     state::{ConnectorId, ScreenId, State},
 };
 use smithay::{
@@ -16,7 +16,7 @@ use smithay::{
             compositor::{DrmCompositor, FrameFlags, PrimaryPlaneElement},
             exporter::gbm::GbmFramebufferExporter,
         },
-        egl::{EGLContext, EGLDevice, EGLDisplay},
+        egl::{EGLContext, EGLDisplay},
         input::{
             ButtonState, Event, InputEvent, InputTime, KeyState, KeyboardKeyEvent, PointerButtonEvent, Switch, SwitchState,
             SwitchToggleEvent,
@@ -385,20 +385,14 @@ impl Hardware {
                 }
             }
             event => {
-                let screen = state
-                    .screen_of(state.seats[seat].workspace)
-                    .or_else(|| state.connected.first().copied())
-                    .unwrap_or(ScreenId(0));
+                let screen = state.screen_for(seat).unwrap_or(ScreenId(0));
                 state.process_seat_input_event(event, seat, screen);
             }
         }
     }
 
     fn add_gpu(&mut self, id: u64, path: &Path, state: &mut State, shared: Rc<RefCell<Self>>) -> Result<(), Error> {
-        if DrmNode::from_dev_id(id)?.ty() != NodeType::Primary {
-            return Ok(());
-        }
-        if self.gpus.contains_key(&id) || !self.active {
+        if DrmNode::from_dev_id(id)?.ty() != NodeType::Primary || self.gpus.contains_key(&id) || !self.active {
             return Ok(());
         }
         let device = udev::Device::from_devnum(udev::DeviceType::Character, id)?;
@@ -464,9 +458,7 @@ impl Hardware {
         self.gpus.insert(id, gpu);
         if state.dmabuf.device.is_none() {
             let renderer = &self.gpus[&id].renderer;
-            let node = EGLDevice::device_for_display(renderer.egl_context().display())
-                .and_then(|device| device.try_get_render_node()).ok().flatten()
-                .or_else(|| DrmNode::from_dev_id(id).ok());
+            let node = render_node(renderer).or_else(|| DrmNode::from_dev_id(id).ok());
             if let Err(err) = state.dmabuf.enable(&state.display_handle, id, node, renderer.dmabuf_formats()) {
                 tracing::warn!(?err, "could not advertise dma-buf support");
             }
@@ -510,34 +502,29 @@ impl Hardware {
                 let refresh = output.current_mode().map_or(60_000, |mode| mode.refresh).max(1);
                 surface.next_frame = now + Duration::from_secs_f64(1000.0 / refresh as f64);
                 let elements = state.screen_elements(&mut gpu.renderer, surface.screen, now);
-                let rendered =
-                    match surface
-                        .compositor
-                        .render_frame(&mut gpu.renderer, &elements, BACKGROUND, FrameFlags::empty())
-                    {
-                        Ok(frame) => {
-                            if frame.needs_sync()
-                                && let PrimaryPlaneElement::Swapchain(element) = frame.primary_element
-                                && let Err(err) = element.sync.wait()
-                            {
-                                tracing::warn!(?err, "render synchronization failed");
-                                continue;
-                            }
-                            !frame.is_empty
-                        }
-                        Err(err) => {
-                            tracing::warn!(?err, "DRM render failed");
-                            continue;
-                        }
-                    };
-                if rendered {
-                    match surface.compositor.queue_frame(()) {
-                        Ok(()) => {
-                            surface.pending = true;
-                            tracing::trace!(screen = surface.screen.0, "DRM frame queued");
-                        }
-                        Err(err) => tracing::warn!(?err, "DRM submit failed"),
+                let frame = match surface.compositor.render_frame(&mut gpu.renderer, &elements, BACKGROUND, FrameFlags::empty()) {
+                    Ok(frame) => frame,
+                    Err(err) => {
+                        tracing::warn!(?err, "DRM render failed");
+                        continue;
                     }
+                };
+                if frame.needs_sync()
+                    && let PrimaryPlaneElement::Swapchain(element) = frame.primary_element
+                    && let Err(err) = element.sync.wait()
+                {
+                    tracing::warn!(?err, "render synchronization failed");
+                    continue;
+                }
+                if frame.is_empty {
+                    continue;
+                }
+                match surface.compositor.queue_frame(()) {
+                    Ok(()) => {
+                        surface.pending = true;
+                        tracing::trace!(screen = surface.screen.0, "DRM frame queued");
+                    }
+                    Err(err) => tracing::warn!(?err, "DRM submit failed"),
                 }
             }
         }
@@ -550,27 +537,20 @@ impl Hardware {
         // Frame callbacks continue even after the last monitor is unplugged.
         if now >= self.callbacks_at {
             self.callbacks_at = now + Duration::from_millis(16);
-            for window in state.live_windows() {
-                let output = state
-                    .workspace_of(window)
-                    .and_then(|ws| state.screen_of(ws))
-                    .map(|id| &state.screens[&id].output)
-                    .unwrap_or(&self.callback_output);
-                window.send_frame(
-                    output,
-                    state.start_time.elapsed(),
-                    Some(Duration::from_millis(16)),
-                    |_, _| Some(output.clone()),
-                );
-            }
-            state.layers_frame(state.start_time.elapsed(), Some(Duration::from_millis(16)));
+            state.send_frames(&self.callback_output, Duration::from_millis(16));
         }
-        for screen in state.screens.values_mut() {
-            screen.space.refresh();
-        }
-        state.popups.cleanup();
-        let _ = state.display_handle.flush_clients();
+        state.after_frame();
     }
+}
+
+/// What `Gpu::names` finds out about a connector.
+struct Names {
+    name: String,
+    connector_id: String,
+    identity: String,
+    make: String,
+    model: String,
+    serial: String,
 }
 
 impl Gpu {
@@ -583,8 +563,8 @@ impl Gpu {
             .crtcs()
             .map(|(info, crtc)| (info.clone(), crtc))
             .filter(|(info, _)| {
-                let (name, identity) = self.names(info);
-                !state.screen_off(&name, &identity)
+                let names = self.names(info);
+                !state.screen_off(&names.name, &names.identity)
             })
             .collect();
         let gone: Vec<_> = self
@@ -615,22 +595,18 @@ impl Gpu {
         Ok(())
     }
 
-    /// A connector's output name (`card1-eDP-1`) and its monitor's identity
-    /// (as `state::identity` makes it, alone).
-    fn names(&self, connector: &connector::Info) -> (String, String) {
+    /// A connector's output name (`card1-eDP-1`), its stable id, its
+    /// monitor's make, model and serial and identity (as `state::identity`
+    /// makes it, alone).
+    fn names(&self, connector: &connector::Info) -> Names {
         let (kind, n) = (connector.interface().as_str(), connector.interface_id());
         let info = display_info::for_connector(&self.drm, connector.handle());
         let make = info.as_ref().and_then(|i| i.make()).unwrap_or_default();
         let model = info.as_ref().and_then(|i| i.model()).unwrap_or_default();
         let serial = info.as_ref().and_then(|i| i.serial()).unwrap_or_default();
-        let identity = crate::state::identity(
-            &make,
-            &model,
-            &serial,
-            &format!("{}-{kind}-{n}", self.identity),
-            false,
-        );
-        (format!("{}-{kind}-{n}", self.name), identity)
+        let connector_id = format!("{}-{kind}-{n}", self.identity);
+        let identity = crate::state::identity(&make, &model, &serial, &connector_id, false);
+        Names { name: format!("{}-{kind}-{n}", self.name), connector_id, identity, make, model, serial }
     }
 
     fn connect(&mut self, connector: connector::Info, crtc: crtc::Handle, state: &mut State) -> Result<(), Error> {
@@ -641,8 +617,8 @@ impl Gpu {
             .or_else(|| connector.modes().first())
             .copied()
             .ok_or("connector has no mode")?;
-        let (name, identity) = self.names(&connector);
-        let wanted = crate::screens::find(&state.config.screens, &name, &identity).and_then(|i| state.config.screens[i].mode);
+        let names = self.names(&connector);
+        let wanted = crate::screens::find(&state.config.screens, &names.name, &names.identity).and_then(|i| state.config.screens[i].mode);
         let modes: Vec<(i32, i32, i32)> = connector
             .modes()
             .iter()
@@ -654,7 +630,7 @@ impl Gpu {
         let chosen = wanted.and_then(|wanted| {
             let index = crate::screens::choose_mode(&modes, wanted);
             if index.is_none() {
-                tracing::warn!(screen = %name, "no mode {}x{}: using the preferred one", wanted.0, wanted.1);
+                tracing::warn!(screen = %names.name, "no mode {}x{}: using the preferred one", wanted.0, wanted.1);
             }
             index
         });
@@ -675,36 +651,18 @@ impl Gpu {
             state.resize_screen(surface.screen);
             return Ok(());
         }
-        let name = format!(
-            "{}-{}-{}",
-            self.name,
-            connector.interface().as_str(),
-            connector.interface_id()
-        );
-        let info = display_info::for_connector(&self.drm, connector.handle());
         let output = Output::new(
-            name,
+            names.name,
             PhysicalProperties {
-                size: connector
-                    .size()
-                    .map(|(w, h)| (w as i32, h as i32))
-                    .unwrap_or((0, 0))
-                    .into(),
+                size: connector.size().map_or((0, 0), |(w, h)| (w as i32, h as i32)).into(),
                 subpixel: Subpixel::Unknown,
-                make: info.as_ref().and_then(|i| i.make()).unwrap_or_default(),
-                model: info.as_ref().and_then(|i| i.model()).unwrap_or_default(),
-                serial_number: info.as_ref().and_then(|i| i.serial()).unwrap_or_default(),
+                make: names.make,
+                model: names.model,
+                serial_number: names.serial,
             },
         );
         output.change_current_state(Some(wl_mode), None, None, Some((0, 0).into()));
-        output.user_data().insert_if_missing(|| {
-            ConnectorId(format!(
-                "{}-{}-{}",
-                self.identity,
-                connector.interface().as_str(),
-                connector.interface_id()
-            ))
-        });
+        output.user_data().insert_if_missing(|| ConnectorId(names.connector_id));
         output.set_preferred(wl_mode);
         for mode in connector.modes() {
             output.add_mode(Mode::from(*mode));

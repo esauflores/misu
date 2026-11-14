@@ -45,15 +45,9 @@ pub struct Pointer {
     pub natural_scroll: Option<bool>,
     /// Disable while typing.
     pub dwt: Option<bool>,
-    pub click_method: Option<ClickMethod>,
+    pub click_method: Option<libinput::ClickMethod>,
     /// -1 to 1.
     pub accel_speed: Option<f64>,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ClickMethod {
-    Clickfinger,
-    ButtonAreas,
 }
 
 impl Default for InputConfig {
@@ -118,14 +112,10 @@ impl InputConfig {
         {
             results.push(("dwt", device.config_dwt_set_enabled(on)));
         }
-        if let Some(method) = options.click_method {
-            let method = match method {
-                ClickMethod::Clickfinger => libinput::ClickMethod::Clickfinger,
-                ClickMethod::ButtonAreas => libinput::ClickMethod::ButtonAreas,
-            };
-            if device.config_click_methods().contains(&method) {
-                results.push(("click_method", device.config_click_set_method(method)));
-            }
+        if let Some(method) = options.click_method
+            && device.config_click_methods().contains(&method)
+        {
+            results.push(("click_method", device.config_click_set_method(method)));
         }
         if let Some(speed) = options.accel_speed
             && device.config_accel_is_available()
@@ -183,8 +173,8 @@ impl Pointer {
                 "dwt" => new.dwt = Some(boolean(value, key)?),
                 "click_method" => {
                     new.click_method = Some(match value.as_str() {
-                        Some("clickfinger") => ClickMethod::Clickfinger,
-                        Some("button_areas") => ClickMethod::ButtonAreas,
+                        Some("clickfinger") => libinput::ClickMethod::Clickfinger,
+                        Some("button_areas") => libinput::ClickMethod::ButtonAreas,
                         _ => return Err(format!("{name} click_method must be \"clickfinger\" or \"button_areas\"")),
                     })
                 }

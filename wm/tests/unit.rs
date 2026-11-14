@@ -240,14 +240,14 @@ mod layout {
         let (mut ws, windows) = workspace(3, now);
         ws.reveal(ME, &windows[2], now, false);
         let wide: Size<i32, Logical> = (3000, 600).into();
-        ws.resize(wide, now, false);
+        ws.set_area(Rectangle::from_size(wide), wide, now, false);
         assert_eq!(ws.size(), wide);
         let w = width_on(3000);
         assert_eq!(windows[0].size.get(), Some((w, 600 - 2 * GAP)));
         // Three half-width columns still don't fit, and the view is in range: kept.
         assert_eq!(ws.view_target(ME), view_showing_third());
         // Narrower than before, the last column ends further left: pulled back to it.
-        ws.resize((600, 600).into(), now, false);
+        ws.set_area(Rectangle::from_size((600, 600).into()), (600, 600).into(), now, false);
         let w = width_on(600);
         let end = (GAP + 3 * (w + GAP) - 600) as f64;
         assert!(end < view_showing_third());
@@ -701,7 +701,7 @@ mod options {
 
     #[test]
     fn input_settings_come_from_wm_then_the_file() {
-        use wm::input::settings::ClickMethod;
+        use smithay::reexports::input::ClickMethod;
         let input = Config::default().input;
         assert_eq!((input.keyboard.layout.as_str(), input.keyboard.repeat_rate, input.keyboard.repeat_delay), ("us", 25, 600));
         assert!(!input.focus_follows_mouse);

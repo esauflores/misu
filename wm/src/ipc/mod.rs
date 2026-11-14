@@ -62,7 +62,7 @@ pub const ENV: &str = "WM_SOCK";
 pub const HELP: &str = "[seat N] COMMAND, where COMMAND is one of:
   tree                      windows, workspaces and seats, as JSON
   subscribe                 keep the connection: the state, then a JSON
-                            line for each change (see src/ipc.rs)
+                            line for each change (see src/ipc/mod.rs)
   spawn CMD…                run a command
   close                     close the seat's focused window
   focus left|right          focus the column to the side
@@ -103,7 +103,7 @@ pub enum Command {
     Action(Action),
     Pointer(f64, f64),
     /// A button, where (if given), and how many times.
-    Click(crate::ipc::remote::Button, Option<(f64, f64)>, u32),
+    Click(remote::Button, Option<(f64, f64)>, u32),
     Drag((f64, f64), (f64, f64)),
     Scroll((f64, f64), Option<(f64, f64)>),
     Key(String),
@@ -175,27 +175,17 @@ pub fn parse(line: &str) -> Result<Request, String> {
             [n, "follow"] => Action::MoveToWorkspace(workspace(&[n])?, true),
             _ => Action::MoveToWorkspace(workspace(args)?, false),
         }),
-        "animations" => Command::Action(Action::Animations(match args {
-            ["on"] => Some(true),
-            ["off"] => Some(false),
-            ["toggle"] | [] => None,
-            _ => return Err("animations takes on, off or toggle".into()),
-        })),
-        "fullscreen" => Command::Action(Action::Fullscreen(match args {
-            ["on"] => Some(true),
-            ["off"] => Some(false),
-            ["toggle"] | [] => None,
-            _ => return Err("fullscreen takes on, off or toggle".into()),
-        })),
+        "animations" => Command::Action(Action::Animations(on_off(name, args)?)),
+        "fullscreen" => Command::Action(Action::Fullscreen(on_off(name, args)?)),
         "pointer" => match args {
             [x, y] => Command::Pointer(number(x)?, number(y)?),
             _ => return Err("pointer takes X Y".into()),
         },
         "click" | "double-click" => {
             let count = if name == "click" { 1 } else { 2 };
-            let (button, rest) = match args.split_first() {
-                Some((word, rest)) if crate::ipc::remote::Button::parse(word).is_some() => (crate::ipc::remote::Button::parse(word).unwrap(), rest),
-                _ => (crate::ipc::remote::Button::Left, args),
+            let (button, rest) = match args.split_first().and_then(|(word, rest)| Some((remote::Button::parse(word)?, rest))) {
+                Some(found) => found,
+                None => (remote::Button::Left, args),
             };
             let at = match rest {
                 [] => None,
@@ -247,6 +237,16 @@ pub fn parse(line: &str) -> Result<Request, String> {
     Ok(Request { seat, command })
 }
 
+/// `on`, `off`, or `toggle` (also nothing) for command `name`.
+fn on_off(name: &str, args: &[&str]) -> Result<Option<bool>, String> {
+    match args {
+        ["on"] => Ok(Some(true)),
+        ["off"] => Ok(Some(false)),
+        ["toggle"] | [] => Ok(None),
+        _ => Err(format!("{name} takes on, off or toggle")),
+    }
+}
+
 /// How long a client has to send its command, and to take the reply.
 pub const TIMEOUT: Duration = Duration::from_millis(500);
 /// The longest command line.
@@ -279,44 +279,34 @@ pub fn listen(event_loop: &mut EventLoop<State>, wayland_socket: &OsStr) -> std:
 
 /// One command (or a subscription, kept). The compositor waits for it, so a
 /// client gets `TIMEOUT` in all to send it and as long to take the reply.
-fn serve(state: &mut State, mut stream: UnixStream) -> std::io::Result<()> {
+fn serve(state: &mut State, stream: UnixStream) -> std::io::Result<()> {
     stream.set_nonblocking(false)?;
     let line = read_request(&stream)?;
     stream.set_write_timeout(Some(TIMEOUT))?;
-    let reply = match parse(&line) {
-        Ok(Request { command: Command::Subscribe, .. }) => {
-            writeln!(stream, "{}", json!({ "ok": true }))?;
+    let (seat, command) = match parse(&line).and_then(|r| Ok((state.seat_index(r.seat)?, r.command))) {
+        Ok(request) => request,
+        Err(error) => return reply(&stream, Err(error)),
+    };
+    match command {
+        Command::Subscribe => {
+            reply(&stream, Ok(Value::Null))?;
             state.subscribe(stream);
-            return Ok(());
         }
         // The reply comes with the next frame.
-        Ok(Request { seat, command: Command::Screenshot(path) }) => match state.seat_index(seat) {
-            Ok(seat) => {
-                stream.set_write_timeout(Some(TIMEOUT))?;
-                state.shots.push(Shot { seat, path, stream });
-                return Ok(());
-            }
-            Err(error) => Err(error),
-        },
+        Command::Screenshot(path) => state.shots.push(Shot { seat, path, stream }),
         // The reply comes when the drag is done.
-        Ok(Request { seat, command: Command::Drag(from, to) }) => match state.seat_index(seat) {
-            Ok(_) if state.is_locked() => Err("the session is locked".into()),
-            Ok(seat) => {
-                state.send_drag(seat, from, to, move |result| {
-                    let reply = match result {
-                        Ok(()) => json!({ "ok": true }),
-                        Err(error) => json!({ "ok": false, "error": error }),
-                    };
-                    let _ = writeln!(stream, "{reply}");
-                });
-                return Ok(());
-            }
-            Err(error) => Err(error),
-        },
-        Ok(request) => state.handle_request(request),
-        Err(error) => Err(error),
-    };
-    let reply = match reply {
+        Command::Drag(from, to) if !state.is_locked() => {
+            state.send_drag(seat, from, to, move |result| drop(reply(&stream, result.map(|()| Value::Null))));
+        }
+        command => reply(&stream, state.handle_request(seat, command))?,
+    }
+    Ok(())
+}
+
+/// Answer a request: `{"ok": true}`, with the `result` if there is one, or
+/// the error.
+pub fn reply(mut stream: &UnixStream, result: Result<Value, String>) -> std::io::Result<()> {
+    let reply = match result {
         Ok(Value::Null) => json!({ "ok": true }),
         Ok(value) => json!({ "ok": true, "result": value }),
         Err(error) => json!({ "ok": false, "error": error }),
@@ -401,17 +391,18 @@ impl State {
         Ok(seat)
     }
 
-    pub fn handle_request(&mut self, request: Request) -> Result<Value, String> {
-        let seat = self.seat_index(request.seat)?;
-        let harmless = matches!(request.command, Command::Tree | Command::Help | Command::Action(Action::Reload));
+    /// A command that replies at once, for `seat`.
+    fn handle_request(&mut self, seat: usize, command: Command) -> Result<Value, String> {
+        let harmless = matches!(command, Command::Tree | Command::Help | Command::Action(Action::Reload));
         if self.is_locked() && !harmless {
             return Err("the session is locked".into());
         }
-        match request.command {
+        match command {
             Command::Tree => return Ok(self.tree()),
             Command::Help => return Ok(Value::String(HELP.into())),
-            Command::Subscribe => return Err("subscribe takes a connection of its own".into()),
-            Command::Screenshot(_) => return Err("screenshot replies with a frame, over a connection of its own".into()),
+            Command::Subscribe | Command::Screenshot(_) | Command::Drag(..) => {
+                return Err("this command takes a connection of its own".into());
+            }
             Command::Action(action) => self.run(seat, action),
             Command::Pointer(x, y) => self.pointer_moved(seat, (x, y).into(), InputTime::now()),
             Command::TakeWorkspace(id) => self.take_workspace(seat, WorkspaceId(id))?,
@@ -428,7 +419,6 @@ impl State {
             Command::ScreenRemove(id) => self.disconnect(ScreenId(id)),
             Command::ScreenAdd(id) => self.connect(ScreenId(id)),
             Command::Click(button, at, count) => self.send_click(seat, button, at, count),
-            Command::Drag(..) => return Err("drag replies when done, over a connection of its own".into()),
             Command::Scroll(notches, at) => self.send_scroll(seat, notches, at),
             Command::Key(combo) => self.send_combo(seat, &combo)?,
             Command::Type(text) => self.send_text(seat, &text)?,
