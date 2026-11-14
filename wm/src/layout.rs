@@ -151,7 +151,7 @@ impl<W: Tile> Workspace<W> {
     /// screen: what layer surfaces over windows (a bar) give way to.
     pub fn covered(&self, seat: usize, now: Instant) -> bool {
         let view = self.view(seat, now);
-        self.columns.iter().any(|c| c.fullscreen && (c.x.value(now) - GAP as f64 - view).round() == 0.0)
+        self.columns.iter().any(|c| c.fullscreen && (c.x.value(now) - view).round() == 0.0)
     }
 
     fn index_of(&self, window: &W) -> Option<usize> {
@@ -265,7 +265,7 @@ impl<W: Tile> Workspace<W> {
         let view = self.view_target(seat);
         let target = if self.columns[index].fullscreen {
             // Exactly at the screen's edge, to cover it.
-            x - gap
+            x
         } else if x - gap < view {
             x - gap
         } else if x + w + gap > view + screen {
@@ -329,8 +329,9 @@ impl<W: Tile> Workspace<W> {
             .map(|(i, c)| {
                 let x = x(c).round() as i32;
                 // Full screen: from the screen's corner, whatever the bar
-                // keeps, so a view with it at the edge has it all.
-                let loc = if c.fullscreen { Point::from((x - GAP, 0)) } else { origin + Point::from((x, GAP)) };
+                // keeps (its column has the bar's room before it), so a view
+                // with it at the edge has it all.
+                let loc = if c.fullscreen { Point::from((x, 0)) } else { origin + Point::from((x, GAP)) };
                 (&c.window, Rectangle::new(loc, self.window_size(i)))
             })
             .collect();
@@ -351,12 +352,12 @@ impl<W: Tile> Workspace<W> {
 
     /// `fraction` of the screen, less its share of the gaps: 1/fraction
     /// columns and the gaps around them fill the screen exactly.
-    /// A full-screen column's room is the whole screen less the gaps
-    /// columns keep around them, so its window, from one gap before it to
-    /// one after, ends where the next column's room starts.
+    /// A full-screen column's window is the whole screen, the bar's room
+    /// (`lead`) included: its column is the rest, with that room before it
+    /// and ordinary gaps around, so it overlaps no other column.
     fn column_width(&self, index: usize) -> i32 {
         if self.columns.get(index).is_some_and(|c| c.fullscreen) {
-            return (self.screen.w - 2 * GAP).max(1);
+            return (self.screen.w - self.lead(index) as i32).max(1);
         }
         let fraction = self.columns.get(index).map_or(DEFAULT_WIDTH, |c| c.width);
         ((self.area.size.w as f64 * fraction - GAP as f64 * (1.0 + fraction)) as i32).max(1)
@@ -371,7 +372,13 @@ impl<W: Tile> Workspace<W> {
     }
 
     fn column_x(&self, index: usize) -> f64 {
-        (0..index).fold(GAP as f64, |x, i| x + (self.column_width(i) + GAP) as f64)
+        (0..index).fold(GAP as f64, |x, i| x + self.lead(i) + (self.column_width(i) + GAP) as f64) + self.lead(index)
+    }
+
+    /// The room a full-screen column keeps before it: what the bar takes at
+    /// the screen's left, which its window covers.
+    fn lead(&self, index: usize) -> f64 {
+        if self.columns.get(index).is_some_and(|c| c.fullscreen) { self.area.loc.x as f64 } else { 0.0 }
     }
 }
 

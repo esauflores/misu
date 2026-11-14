@@ -331,6 +331,21 @@ mod layout {
         assert!(ws.covered(ME, now));
         assert!(!ws.covered(OTHER, now), "another seat's view doesn't have it at the edge");
 
+        // The one before, in view: a gap, then the full-screen window, none
+        // of it over that one's room.
+        ws.reveal(ME, &windows[0], now, false);
+        let xs: Vec<_> = ws.positions(ME, now).map(|(_, p)| p.x).collect();
+        assert!(xs[1] >= xs[0] + width_on(OUT.0 - 40) + GAP, "{xs:?}");
+        // Two full-screen side by side don't overlap either.
+        assert!(ws.set_fullscreen(&windows[2], Some(true), now, false));
+        ws.reveal(ME, &windows[2], now, false);
+        let xs: Vec<_> = ws.positions(ME, now).map(|(_, p)| p.x).collect();
+        assert_eq!(xs[2], 0);
+        assert!(xs[1] + OUT.0 + GAP <= xs[2], "{xs:?}");
+        assert!(ws.covered(ME, now));
+        assert!(ws.set_fullscreen(&windows[2], Some(false), now, false));
+        ws.reveal(ME, &windows[1], now, false);
+
         // Back: its column's size again, and nothing covers.
         assert!(ws.set_fullscreen(&windows[1], Some(false), now, false));
         assert!(!ws.set_fullscreen(&windows[1], Some(false), now, false), "already");
