@@ -31,7 +31,7 @@ use xcursor::{
 };
 
 use crate::{
-    shot::ShotElement,
+    backend::shot::ShotElement,
     state::{State, WorkspaceId},
 };
 

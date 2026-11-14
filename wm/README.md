@@ -83,7 +83,7 @@ file, and `reload` (or Mod+Ctrl+Shift+R) reads it again. `input` sets the
 keyboard (`layout`, `variant`, `options`, `repeat_rate`, `repeat_delay`;
 every seat's), touchpads and mice (`tap`, `drag`, `natural_scroll`, `dwt`,
 `click_method`, `accel_speed`; libinput, on a VT) and
-`focus_follows_mouse`; see `src/settings.rs`. `screens` (on a VT) lists
+`focus_follows_mouse`; see `src/input/settings.rs`. `screens` (on a VT) lists
 monitors by connector (`eDP-1`) or identity, each with an optional `mode`
 (`"1366x768@60"`) and `off`; they go left to right in the list's order. A
 laptop's panel turns off while its lid is closed. See `src/screens.rs`.
@@ -93,7 +93,7 @@ an agent's too: screens show only the locker, every keyboard goes to it,
 `wm msg` refuses all but `tree`, `help`, `subscribe` and `reload`, and
 screenshots fail. Only the combos listed in `locked_bindings`
 (`["XF86AudioMute", "XF86AudioRaiseVolume"]`) run. A locker that crashes
-leaves the session locked; start another to unlock. See `src/lock.rs`.
+leaves the session locked; start another to unlock. See `src/protocols/lock.rs`.
 
 Each seat has its own clipboard and primary selection (select, then
 middle-click). Clipboard tools reach them without a window, through data
@@ -219,21 +219,21 @@ logs and a screenshot in `target/tmp/e2e/`.
   recognising a monitor), workspaces, windows, focus
 - `src/layout.rs`: columns, each seat's view of them, and animated values
   that retarget instead of restarting
-- `src/ipc.rs`: the control socket, `wm msg`, and what `subscribe` hears
+- `src/ipc/mod.rs`: the control socket, `wm msg`, and what `subscribe` hears
 - `src/lib.rs` and `config.json`: options, the config file, default bindings
-- `src/bindings.rs`: key combos and the commands they run
-- `src/input.rs`: input routing, and the actions bindings and `wm msg` run
-- `src/shot.rs`: screenshots of a seat's own view, drawn off screen
-- `src/capture.rs`: capture for other programs (grim, screen sharing)
-- `src/decorations.rs`: no title bars from apps; borders, and the colours
-- `src/cursor.rs`: each seat's cursor, from the theme or the app
-- `src/settings.rs`: input settings: keyboard layout and repeat, touchpad
+- `src/input/bindings.rs`: key combos and the commands they run
+- `src/input/mod.rs`: input routing, and the actions bindings and `wm msg` run
+- `src/backend/shot.rs`: screenshots of a seat's own view, drawn off screen
+- `src/protocols/capture.rs`: capture for other programs (grim, screen sharing)
+- `src/protocols/decorations.rs`: no title bars from apps; borders, and the colours
+- `src/input/cursor.rs`: each seat's cursor, from the theme or the app
+- `src/input/settings.rs`: input settings: keyboard layout and repeat, touchpad
   and mouse options, focus following the mouse
-- `src/xwayland.rs`: X11 apps, through xwayland-satellite
-- `src/winit.rs`: the nested backend and rendering
-- `src/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices
-- `src/layers.rs`: the layer shell: bars and launchers, their room and focus
-- `src/handlers.rs`: Wayland protocol handlers
+- `src/protocols/xwayland.rs`: X11 apps, through xwayland-satellite
+- `src/backend/winit.rs`: the nested backend and rendering
+- `src/backend/udev.rs`: the direct DRM backend, session lifecycle, hotplug and devices
+- `src/protocols/layers.rs`: the layer shell: bars and launchers, their room and focus
+- `src/protocols/handlers.rs`: Wayland protocol handlers
 - `tests/unit.rs`, `tests/e2e.rs`: see Tests
 
 ## Next

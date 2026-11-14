@@ -93,26 +93,26 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/lib.rs` | module list, options and the config file |
 | `src/state.rs` | State: seats, screens, workspaces, windows, focus |
 | `src/layout.rs` | columns, per-seat views, `Anim` |
-| `src/ipc.rs` | socket, `wm msg`, `tree`, events |
-| `src/input.rs` | input routing, `Action` |
-| `src/bindings.rs`, `config.json` | key combos, default bindings |
-| `src/shot.rs` | a seat's view drawn off screen, as a PNG |
-| `src/capture.rs` | ext-image-copy-capture, foreign toplevel list |
-| `src/decorations.rs` | xdg-decoration (always server side), borders, `colors` |
-| `src/cursor.rs` | xcursor theme, per-seat cursors, tints |
-| `src/settings.rs` | `input`: xkb, repeat, libinput options, focus follows mouse |
 | `src/screens.rs` | `screens`: modes, order, off, laptop panels |
-| `src/clipboard.rs` | primary selection, wlr/ext data control |
-| `src/remote.rs` | remote input through `wm msg`: keys, typing, clicks, scroll, drag |
-| `src/activation.rs` | xdg-activation: per-seat tokens, `State::activate` |
-| `src/idle.rs` | ext-idle-notify, per seat |
-| `src/lock.rs` | ext-session-lock: lock surfaces, input and drawing while locked |
-| `src/xwayland.rs` | xwayland-satellite: display, `DISPLAY`, restarts |
-| `src/winit.rs` | nested backend and rendering |
-| `src/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
-| `src/dmabuf.rs` | linux-dmabuf: formats, deferred imports |
-| `src/layers.rs` | layer shell: bars, launchers, their room and focus |
-| `src/handlers.rs` | Wayland protocol handlers |
+| `src/ipc/mod.rs` | socket, `wm msg`, `tree`, events |
+| `src/ipc/remote.rs` | remote input through `wm msg`: keys, typing, clicks, scroll, drag |
+| `src/input/mod.rs` | input routing, `Action` |
+| `src/input/bindings.rs`, `config.json` | key combos, default bindings |
+| `src/input/cursor.rs` | xcursor theme, per-seat cursors, tints |
+| `src/input/settings.rs` | `input`: xkb, repeat, libinput options, focus follows mouse |
+| `src/backend/winit.rs` | nested backend and rendering |
+| `src/backend/udev.rs` | DRM/libinput backend, libseat lifecycle, GPU/output hotplug |
+| `src/backend/dmabuf.rs` | linux-dmabuf: formats, deferred imports |
+| `src/backend/shot.rs` | the scene both backends draw; a seat's view drawn off screen, as a PNG |
+| `src/protocols/handlers.rs` | Wayland protocol handlers |
+| `src/protocols/layers.rs` | layer shell: bars, launchers, their room and focus |
+| `src/protocols/capture.rs` | ext-image-copy-capture, foreign toplevel list |
+| `src/protocols/decorations.rs` | xdg-decoration (always server side), borders, `colors` |
+| `src/protocols/clipboard.rs` | primary selection, wlr/ext data control |
+| `src/protocols/activation.rs` | xdg-activation: per-seat tokens, `State::activate` |
+| `src/protocols/idle.rs` | ext-idle-notify, per seat |
+| `src/protocols/lock.rs` | ext-session-lock: lock surfaces, input and drawing while locked |
+| `src/protocols/xwayland.rs` | xwayland-satellite: display, `DISPLAY`, restarts |
 | `tests/unit.rs`, `tests/e2e.rs` | tests |
 
 ## Status
@@ -132,12 +132,12 @@ input/connector/GPU hotplug, all outputs disconnected, VT recovery, idle
 damage and clean shutdown. GPU connector keys use stable device paths, so
 DRM card renumbering preserves screen IDs. Live mode changes keep the screen
 ID (VM: 1366x768 to 1024x768 and back), and at poweroff wm stops before
-seatd. linux-dmabuf client buffers (`src/dmabuf.rs`) work: the e2e run checks
+seatd. linux-dmabuf client buffers (`src/backend/dmabuf.rs`) work: the e2e run checks
 kitty's Mesa dmabufs are imported on this laptop's Intel GPU. wm targets this
 laptop: one Intel GPU drives the panel and every port, so multi-GPU is out of
 scope (hotplug of a GPU is handled, rendering across two is not).
 
-Step 2: layer shell (`src/layers.rs`). Layer surfaces belong to a screen;
+Step 2: layer shell (`src/protocols/layers.rs`). Layer surfaces belong to a screen;
 their exclusive zones shrink its workspaces' area (`Screen::area`, offset
 in `Workspace::positions`/`targets`). Keyboard focus for them is per seat
 (`SeatData::layer_focus`): `Exclusive` (fuzzel) goes to the launching seat
@@ -246,7 +246,7 @@ by Misu's install.sh):
   confirmed (`lock_frame_done`, from `take_shots`) after two frames. A
   live locker's lock refuses a second locker; a dead one's (smithay's
   Defunct) stays locked until a new locker takes over. The e2e run drives
-  its own locker (`tests/support/locker.rs`, wayland-client) through lock,
+  its own locker (`tests/locker.rs`, wayland-client) through lock,
   refusal, crash, takeover and unlock. Not yet: a subscription event for
   the lock (`tree` has `locked`).
 - Clipboard (done): `clipboard.rs` adds primary selection and both data

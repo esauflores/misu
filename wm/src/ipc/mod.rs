@@ -28,6 +28,8 @@
 //! twice. A subscriber that doesn't keep up (its socket buffer full) is
 //! dropped.
 
+pub mod remote;
+
 use std::{
     collections::BTreeMap,
     ffi::OsStr,
@@ -49,9 +51,9 @@ use smithay::{
 };
 
 use crate::{
+    backend::shot::Shot,
     input::Action,
     layout::Direction,
-    shot::Shot,
     state::{FALLBACK_SIZE, Screen, ScreenId, State, WorkspaceId, new_output, window_id, window_info},
 };
 
@@ -101,7 +103,7 @@ pub enum Command {
     Action(Action),
     Pointer(f64, f64),
     /// A button, where (if given), and how many times.
-    Click(crate::remote::Button, Option<(f64, f64)>, u32),
+    Click(crate::ipc::remote::Button, Option<(f64, f64)>, u32),
     Drag((f64, f64), (f64, f64)),
     Scroll((f64, f64), Option<(f64, f64)>),
     Key(String),
@@ -192,8 +194,8 @@ pub fn parse(line: &str) -> Result<Request, String> {
         "click" | "double-click" => {
             let count = if name == "click" { 1 } else { 2 };
             let (button, rest) = match args.split_first() {
-                Some((word, rest)) if crate::remote::Button::parse(word).is_some() => (crate::remote::Button::parse(word).unwrap(), rest),
-                _ => (crate::remote::Button::Left, args),
+                Some((word, rest)) if crate::ipc::remote::Button::parse(word).is_some() => (crate::ipc::remote::Button::parse(word).unwrap(), rest),
+                _ => (crate::ipc::remote::Button::Left, args),
             };
             let at = match rest {
                 [] => None,

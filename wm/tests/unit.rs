@@ -510,9 +510,8 @@ mod screens {
 
 mod ipc {
     use wm::{
-        remote::Button,
         input::Action,
-        ipc::{Command, Request, parse},
+        ipc::{Command, Request, parse, remote::Button},
         layout::Direction,
     };
 
@@ -661,7 +660,7 @@ mod events {
 
 mod options {
     use smithay::input::keyboard::{Keysym, ModifiersState, keysyms};
-    use wm::{Backend, Command, Config, Flags, Modifier, bindings::Bindings, input::Action, layout::Direction};
+    use wm::{Backend, Command, Config, Flags, Modifier, input::{Action, bindings::Bindings}, layout::Direction};
 
     fn args(s: &str) -> Result<Command, String> {
         Config::from_args(s.split_whitespace().map(String::from))
@@ -702,7 +701,7 @@ mod options {
 
     #[test]
     fn input_settings_come_from_wm_then_the_file() {
-        use wm::settings::ClickMethod;
+        use wm::input::settings::ClickMethod;
         let input = Config::default().input;
         assert_eq!((input.keyboard.layout.as_str(), input.keyboard.repeat_rate, input.keyboard.repeat_delay), ("us", 25, 600));
         assert!(!input.focus_follows_mouse);
@@ -864,10 +863,10 @@ mod options {
     #[test]
     fn locked_bindings_are_combos() {
         let c = load(r#"{"locked_bindings":["XF86AudioMute", "Mod+Shift+p"]}"#, Flags::default()).unwrap();
-        let mute = wm::bindings::pressed(&mods(false, false, false), sym(keysyms::KEY_XF86AudioMute));
-        let combo = wm::bindings::pressed(&mods(true, false, true), sym(keysyms::KEY_P));
+        let mute = wm::input::bindings::pressed(&mods(false, false, false), sym(keysyms::KEY_XF86AudioMute));
+        let combo = wm::input::bindings::pressed(&mods(true, false, true), sym(keysyms::KEY_P));
         assert!(c.locked_bindings.contains(&mute) && c.locked_bindings.contains(&combo));
-        assert!(!c.locked_bindings.contains(&wm::bindings::pressed(&mods(true, false, false), sym(keysyms::KEY_Return))));
+        assert!(!c.locked_bindings.contains(&wm::input::bindings::pressed(&mods(true, false, false), sym(keysyms::KEY_Return))));
     }
 }
 
@@ -1020,7 +1019,7 @@ mod input {
 
 mod dmabuf {
     use smithay::{backend::{allocator::{Format, Fourcc, Modifier}, drm::DrmNode}, reexports::{rustix::fs::makedev, wayland_server::Display}};
-    use wm::{dmabuf::DmabufSupport, state::State};
+    use wm::{backend::dmabuf::DmabufSupport, state::State};
 
     #[test]
     fn gpu_global_is_withdrawn_and_recreated_on_return() {

@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2024"
 description = "A scrolling Wayland compositor with several seats and per-workspace animations"
 license = "MIT"
+# tests/locker.rs is a helper of e2e, not a test target of its own.
+autotests = false
 
 [dependencies]
 png = "0.17"
@@ -30,3 +32,9 @@ wayland-protocols = { version = "0.32", features = ["client", "staging"] }
 
 [profile.dev.package."*"]
 opt-level = 2
+
+[[test]]
+name = "unit"
+
+[[test]]
+name = "e2e"

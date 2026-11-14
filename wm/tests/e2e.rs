@@ -23,7 +23,6 @@ use std::{
 
 use serde_json::Value;
 
-#[path = "support/locker.rs"]
 mod locker;
 
 const TIMEOUT: Duration = Duration::from_secs(15);
@@ -235,7 +234,7 @@ fn nested_in_headless_scroll() {
         .env("XDG_RUNTIME_DIR", &runtime)
         .env("WAYLAND_DISPLAY", &host_display)
         .env("WM_SOCK", &outer)
-        .env("RUST_LOG", "info,wm::dmabuf=trace")
+        .env("RUST_LOG", "info,wm::backend::dmabuf=trace")
         .stdout(log.try_clone().unwrap())
         .stderr(log)
         .process_group(0)

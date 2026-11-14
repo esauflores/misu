@@ -18,10 +18,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let _backend = match state.config.backend {
         wm::Backend::Winit => {
-            wm::winit::init(&mut event_loop, &mut state)?;
+            wm::backend::winit::init(&mut event_loop, &mut state)?;
             None
         }
-        wm::Backend::Drm => Some(wm::udev::init(&mut event_loop, &mut state)?),
+        wm::Backend::Drm => Some(wm::backend::udev::init(&mut event_loop, &mut state)?),
     };
     let ipc_path = ipc::listen(&mut event_loop, &state.socket_name)?;
 

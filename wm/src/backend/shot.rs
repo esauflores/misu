@@ -31,8 +31,8 @@ use smithay::{
 };
 
 use crate::{
+    backend::winit::BACKGROUND,
     state::{NOBODY, ScreenId, State, WorkspaceId},
-    winit::BACKGROUND,
 };
 
 smithay::backend::renderer::element::render_elements! {

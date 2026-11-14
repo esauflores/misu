@@ -82,7 +82,7 @@ pub struct State {
     pub display_handle: DisplayHandle,
     pub loop_signal: LoopSignal,
     pub loop_handle: LoopHandle<'static, Self>,
-    pub dmabuf: crate::dmabuf::DmabufSupport,
+    pub dmabuf: crate::backend::dmabuf::DmabufSupport,
 
     pub screens: HashMap<ScreenId, Screen>,
     /// The workspaces, the source of truth for where windows are.
@@ -98,16 +98,16 @@ pub struct State {
     /// Who `wm msg subscribe`s, and what they were last told.
     pub events: Events,
     /// Screenshots asked for, taken with the next frame (see `shot.rs`).
-    pub shots: Vec<crate::shot::Shot>,
+    pub shots: Vec<crate::backend::shot::Shot>,
     /// The processes seats spawned, by pid (see `launcher_of`).
     spawned: HashMap<u32, usize>,
     /// Capture by other programs (grim, screen sharing): see `capture.rs`.
-    pub capture: crate::capture::Capture,
+    pub capture: crate::protocols::capture::Capture,
     /// Kept alive for its global: clients scale and crop their buffers
     /// (xwayland-satellite needs it).
     pub _viewporter: smithay::wayland::viewporter::ViewporterState,
     /// X11 apps' display, while xwayland-satellite serves one.
-    pub xwayland: Option<crate::xwayland::Xwayland>,
+    pub xwayland: Option<crate::protocols::xwayland::Xwayland>,
     /// Bumped when the input settings may have changed (`reload`): the
     /// backend sets its devices' options again.
     pub input_generation: u64,
@@ -118,9 +118,9 @@ pub struct State {
     pub lid_closed: bool,
     pub session_lock: smithay::wayland::session_lock::SessionLockManagerState,
     /// The session lock, while locked (see `lock.rs`).
-    pub locked: Option<crate::lock::Lock>,
+    pub locked: Option<crate::protocols::lock::Lock>,
     /// The cursor theme (see `cursor.rs`).
-    pub cursors: crate::cursor::Cursors,
+    pub cursors: crate::input::cursor::Cursors,
     /// Kept alive for its global: apps name their cursor's shape.
     pub _cursor_shape: smithay::wayland::cursor_shape::CursorShapeManagerState,
     /// Kept alive for its global: apps leave their title bars to wm.
@@ -138,7 +138,7 @@ pub struct State {
     /// Idle notify, per seat (see `idle.rs`).
     pub idle: smithay::wayland::idle_notify::IdleNotifierState<Self>,
     /// Primary selection and data control (see `clipboard.rs`).
-    pub clipboard: crate::clipboard::Clipboard,
+    pub clipboard: crate::protocols::clipboard::Clipboard,
     pub popups: PopupManager,
 }
 
@@ -150,7 +150,7 @@ impl State {
             socket_name: Self::listen(display, event_loop),
             loop_signal: event_loop.get_signal(),
             loop_handle: event_loop.handle(),
-            dmabuf: crate::dmabuf::DmabufSupport::default(),
+            dmabuf: crate::backend::dmabuf::DmabufSupport::default(),
             screens: HashMap::new(),
             workspaces: HashMap::new(),
             unmapped: Vec::new(),
@@ -161,14 +161,14 @@ impl State {
             events: Events::default(),
             shots: Vec::new(),
             spawned: HashMap::new(),
-            capture: crate::capture::Capture::new(&dh),
-            decorations: crate::decorations::new_state(&dh),
+            capture: crate::protocols::capture::Capture::new(&dh),
+            decorations: crate::protocols::decorations::new_state(&dh),
             xwayland: None,
-            cursors: crate::cursor::Cursors::default(),
+            cursors: crate::input::cursor::Cursors::default(),
             input_generation: 0,
             screen_generation: 0,
             lid_closed: false,
-            session_lock: crate::lock::new_state(&dh),
+            session_lock: crate::protocols::lock::new_state(&dh),
             locked: None,
             _cursor_shape: smithay::wayland::cursor_shape::CursorShapeManagerState::new::<Self>(&dh),
             _viewporter: smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh),
@@ -178,7 +178,7 @@ impl State {
             shm_state: ShmState::new::<Self>(&dh, vec![]),
             _output_manager_state: OutputManagerState::new_with_xdg_output::<Self>(&dh),
             data_device_state: DataDeviceState::new::<Self>(&dh),
-            clipboard: crate::clipboard::Clipboard::new(&dh),
+            clipboard: crate::protocols::clipboard::Clipboard::new(&dh),
             activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Self>(&dh),
             idle: smithay::wayland::idle_notify::IdleNotifierState::new(&dh, event_loop.handle()),
             popups: PopupManager::default(),
@@ -539,7 +539,7 @@ impl State {
     /// instead, focused by whoever focuses its parent.
     pub fn add_window(&mut self, window: Window) {
         let now = Instant::now();
-        window.user_data().insert_if_missing(|| crate::activation::MappedAt(now));
+        window.user_data().insert_if_missing(|| crate::protocols::activation::MappedAt(now));
         self.list_toplevel(&window);
         if let Some(parent) = self.parent_of(&window)
             && let Some(ws) = self.workspace_of(&parent)
@@ -964,7 +964,7 @@ pub struct Seats {
 
 impl Seats {
     /// A new seat, on `workspace`.
-    pub fn add(&mut self, dh: &DisplayHandle, workspace: WorkspaceId, keyboard: &crate::settings::Keyboard) -> usize {
+    pub fn add(&mut self, dh: &DisplayHandle, workspace: WorkspaceId, keyboard: &crate::input::settings::Keyboard) -> usize {
         let index = self.list.len();
         let mut seat = self.state.new_wl_seat(dh, format!("seat{index}"));
         let added = seat.add_keyboard(keyboard.xkb(), keyboard.repeat_delay, keyboard.repeat_rate);

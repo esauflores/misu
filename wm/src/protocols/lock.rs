@@ -30,7 +30,7 @@ use smithay::{
 };
 
 use crate::{
-    shot::ShotElement,
+    backend::shot::ShotElement,
     state::{ScreenId, State},
 };
 

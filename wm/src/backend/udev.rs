@@ -2,8 +2,8 @@
 //! each connector has its own damage-tracked compositor and pending page flip.
 
 use crate::{
+    backend::winit::BACKGROUND,
     state::{ConnectorId, ScreenId, State},
-    winit::BACKGROUND,
 };
 use smithay::{
     backend::{

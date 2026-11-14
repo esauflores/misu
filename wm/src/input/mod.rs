@@ -1,6 +1,10 @@
 //! Input from the backend, delivered to the seat it belongs to, and the
 //! actions bindings and the control socket run.
 
+pub mod bindings;
+pub mod cursor;
+pub mod settings;
+
 use smithay::{
     backend::input::{
         AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent, InputTime,
@@ -134,7 +138,7 @@ impl State {
                     state.seats[seat].intercepted_keys.insert(keycode);
                     return FilterResult::Intercept(KeyboardAction::ChangeVt(vt));
                 }
-                let allowed = !state.is_locked() || state.config.locked_bindings.contains(&crate::bindings::pressed(mods, sym));
+                let allowed = !state.is_locked() || state.config.locked_bindings.contains(&crate::input::bindings::pressed(mods, sym));
                 if allowed && let Some(actions) = state.config.bindings.get(mods, sym) {
                     let actions = actions.to_vec();
                     state.seats[seat].intercepted_keys.insert(keycode);

@@ -44,7 +44,7 @@ use smithay::{
 };
 
 use crate::{
-    shot::{ShotElement, render_rgba},
+    backend::shot::{ShotElement, render_rgba},
     state::{ScreenId, State, window_id, window_info},
 };
 

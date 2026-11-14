@@ -3,34 +3,25 @@
 //! `tests/` can reach it. The command-line options and the config file are
 //! below.
 
-pub mod activation;
-pub mod bindings;
-pub mod capture;
-pub mod clipboard;
-pub mod cursor;
-pub mod decorations;
-pub mod dmabuf;
-pub mod handlers;
-pub mod idle;
+pub mod backend;
 pub mod input;
 pub mod ipc;
-pub mod layers;
 pub mod layout;
-pub mod lock;
-pub mod remote;
+pub mod protocols;
 pub mod screens;
-pub mod settings;
-pub mod shot;
 pub mod state;
-pub mod udev;
-pub mod winit;
-pub mod xwayland;
 
 use std::{collections::BTreeMap, path::PathBuf};
 
 use serde_json::{Map, Value};
 
-use crate::{bindings::Bindings, decorations::Colors};
+use crate::{
+    input::{
+        bindings::{self, Bindings},
+        settings,
+    },
+    protocols::decorations::Colors,
+};
 
 /// The default configuration: wm's own bindings. A config file's bindings
 /// go over these (`null` unbinds a key).
