@@ -593,7 +593,13 @@ impl State {
             let animate = self.animates(seat);
             self.ws(ws).reveal(seat, w, now, animate);
         }
-        self.seats[seat].focus = window;
+        // A window that closed isn't one to go back to.
+        let still_there = self.seats[seat].focus.as_ref().is_some_and(|w| self.workspace_of(w).is_some());
+        let data = &mut self.seats.list[seat];
+        if still_there && data.focus != window {
+            data.previous = data.focus.take();
+        }
+        data.focus = window;
         self.update_keyboard(seat);
         self.update_activation();
     }
@@ -654,6 +660,18 @@ impl State {
             if window.set_activated(focused) && let Some(t) = window.toplevel() && t.is_initial_configure_sent() {
                 t.send_pending_configure();
             }
+        }
+    }
+
+    /// Back to the window `seat` focused before this one, on whichever
+    /// workspace; again, and it's back here.
+    pub fn focus_previous(&mut self, seat: usize) {
+        let Some(previous) = self.seats[seat].previous.clone().filter(|w| self.workspace_of(w).is_some()) else { return };
+        let from = self.seats[seat].focus.clone();
+        self.activate(seat, &previous);
+        // Going there may have passed by that workspace's own focus.
+        if from.is_some() {
+            self.seats.list[seat].previous = from;
         }
     }
 
@@ -895,6 +913,8 @@ pub struct SeatData {
     /// The workspace it is on.
     pub workspace: WorkspaceId,
     pub focus: Option<Window>,
+    /// The window it focused before `focus` (`focus previous` goes back).
+    pub previous: Option<Window>,
     /// A layer surface with its keyboard instead of `focus` (fuzzel, say).
     pub layer_focus: Option<LayerSurface>,
     /// The menu (popup grab) holding its pointer and keyboard.
@@ -929,6 +949,7 @@ impl Seats {
             intercepted_keys: HashSet::new(),
             workspace,
             focus: None,
+            previous: None,
             layer_focus: None,
             menu: None,
             animate: true,

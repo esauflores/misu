@@ -519,6 +519,7 @@ fn nested_in_headless_scroll() {
     clipboards(&wm, &runtime);
     idle_per_seat(&wm, &dir, &runtime);
     activation(&wm, &dir);
+    focus_previous(&wm);
     session_lock(&wm, &dir, &runtime);
 
     // Errors come back as errors.
@@ -1121,3 +1122,42 @@ app.run([])
     Command::new("kill").arg(pid.trim()).status().unwrap();
 }
 
+/// `focus previous` flips between a seat's last two windows, across
+/// workspaces too; a closed window leaves the one before it to go back to.
+fn focus_previous(wm: &Wm) {
+    wm.msg("seat 0 workspace 1");
+    wm.msg("seat 0 focus first");
+    let first = focus(&wm.tree(), 0);
+    wm.msg("seat 0 focus last");
+    let last = focus(&wm.tree(), 0);
+    assert_ne!(first, last, "seat 0 has two windows to flip between");
+    wm.msg("seat 0 focus previous");
+    assert_eq!(focus(&wm.tree(), 0), first);
+    wm.msg("seat 0 focus previous");
+    assert_eq!(focus(&wm.tree(), 0), last);
+
+    // Over to another workspace's window, and back.
+    let home = seat(&wm.tree(), 0)["workspace"].clone();
+    wm.msg("seat 0 workspace 2");
+    let there_ws = seat(&wm.tree(), 0)["workspace"].clone();
+    wm.msg("seat 0 spawn kitty");
+    let there = wait_for("a kitty window there", || {
+        let tree = wm.tree();
+        let ws = tree["workspaces"].as_array().unwrap().iter().find(|w| w["id"] == there_ws)?.clone();
+        let id = ws["windows"].as_array()?.first()?["id"].as_u64()?;
+        (focus(&tree, 0) == Some(id)).then_some(id)
+    });
+    wm.msg("seat 0 focus previous");
+    let tree = wm.tree();
+    assert_eq!((seat(&tree, 0)["workspace"].clone(), focus(&tree, 0)), (home.clone(), last));
+    wm.msg("seat 0 focus previous");
+    let tree = wm.tree();
+    assert_eq!((seat(&tree, 0)["workspace"].clone(), focus(&tree, 0)), (there_ws, Some(there)));
+
+    // It closes: the window before it is the one to go back to.
+    wm.msg("seat 0 close");
+    wait_for("the window closed", || (focus(&wm.tree(), 0) != Some(there)).then_some(()));
+    wm.msg("seat 0 focus previous");
+    let tree = wm.tree();
+    assert_eq!((seat(&tree, 0)["workspace"].clone(), focus(&tree, 0)), (home, last));
+}

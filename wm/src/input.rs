@@ -30,6 +30,8 @@ pub enum Action {
     Focus(Direction),
     /// The first (false) or last (true) column.
     FocusEnd(bool),
+    /// The window the seat focused before this one.
+    FocusPrevious,
     Move(Direction),
     Workspace(usize),
     /// And, with `true`, go there with it.
@@ -265,6 +267,7 @@ impl State {
             }
             Action::Focus(dir) => self.focus_dir(seat, dir),
             Action::FocusEnd(last) => self.focus_end(seat, last),
+            Action::FocusPrevious => self.focus_previous(seat),
             Action::Move(dir) => self.move_dir(seat, dir),
             Action::Workspace(index) => self.switch_workspace(seat, index),
             Action::MoveToWorkspace(index, follow) => self.move_to_workspace(seat, index, follow),

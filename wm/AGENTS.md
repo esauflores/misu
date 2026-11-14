@@ -264,8 +264,13 @@ by Misu's install.sh):
   the token (`MappedAt`): a launch's late self-activation would pull the
   seat back. The e2e run relaunches a single-instance GTK app from another
   workspace and checks a token-less present() moves nothing.
-- Next: layout commands (float toggle, width presets, focus
-  previous, overview, jump), agent-seat commands (keys, typing, scroll,
+- Focus previous (done): `SeatData::previous`, set by `State::focus` when
+  focus leaves a window still in a workspace (a closed one isn't kept).
+  `focus previous` (`focus_previous`) activates it, crossing workspaces,
+  and keeps where it came from as the next previous. Unbound by default
+  (nested, Alt+Tab is Mod+Tab); Misu binds Alt+Tab. Decided: no float
+  toggle and no width presets; columns stay the screen's width.
+- Next: agent-seat commands (keys, typing, scroll,
   right click, focus a window), config includes. Later: gamma
   (`wlr-gamma-control`, for wlsunset; not needed yet).
 XWayland: through xwayland-satellite (Arch `extra`), not Smithay's X11

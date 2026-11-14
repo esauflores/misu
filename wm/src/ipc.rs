@@ -65,6 +65,7 @@ pub const HELP: &str = "[seat N] COMMAND, where COMMAND is one of:
   close                     close the seat's focused window
   focus left|right          focus the column to the side
   focus first|last          focus the first or last column
+  focus previous            back to the window focused before (any workspace)
   move left|right           move the focused column
   workspace N               go to workspace N (1-9)
   move-to-workspace N [follow]
@@ -140,7 +141,8 @@ pub fn parse(line: &str) -> Result<Request, String> {
         "focus" => Command::Action(match args {
             ["first"] => Action::FocusEnd(false),
             ["last"] => Action::FocusEnd(true),
-            _ => Action::Focus(direction(args).map_err(|_| "focus takes left, right, first or last".to_string())?),
+            ["previous"] => Action::FocusPrevious,
+            _ => Action::Focus(direction(args).map_err(|_| "focus takes left, right, first, last or previous".to_string())?),
         }),
         "move" => Command::Action(Action::Move(direction(args)?)),
         "workspace" => Command::Action(Action::Workspace(workspace(args)?)),
