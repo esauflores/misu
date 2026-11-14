@@ -595,10 +595,17 @@ impl State {
         self.seats.list.get(seat).is_some_and(|s| self.workspaces[&s.workspace].covered(seat, Instant::now()))
     }
 
+    /// `window` closed or unmapped: out of the layout and off the list.
     pub fn remove_window(&mut self, window: &Window) {
+        self.take_out(window);
+        self.unlist_toplevel(window);
+    }
+
+    /// `window` out of its workspace; the seats on it move on to its
+    /// neighbour.
+    fn take_out(&mut self, window: &Window) {
         let now = Instant::now();
         let Some(ws) = self.workspace_of(window) else { return };
-        self.unlist_toplevel(window);
         let animate = self.animates_workspace(ws);
         let next = self.ws(ws).remove(window, now, animate);
         for screen in self.screens.values_mut() {
@@ -783,7 +790,7 @@ impl State {
             return;
         }
         // Every seat on it moves on to its neighbour; the window waits, unfocused.
-        self.remove_window(&window);
+        self.take_out(&window);
         let animate = self.animates_workspace(target);
         self.ws(target).add(window.clone(), None, Instant::now(), animate);
         self.update_activation();

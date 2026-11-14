@@ -387,6 +387,10 @@ fn nested_in_headless_scroll() {
     assert_eq!(windows(&tree, 3)[0]["activated"], false, "nobody focuses it there");
     assert_eq!(windows(&tree, 1)[1]["activated"], true);
     assert_eq!(tree["screens"][0]["workspaces"].as_array().unwrap().len(), 3, "made on demand");
+    if on_path("grim") {
+        let moved = grim(&wm, &dir, &runtime, &["-T", &ids[1].to_string()], "grim-moved.ppm");
+        assert!(moved.is_some(), "a window moved to another workspace can still be captured");
+    }
     // A subscriber hears the state, then each change as it happens.
     let stream = UnixStream::connect(&wm.sock).unwrap();
     stream.set_read_timeout(Some(TIMEOUT)).unwrap();
@@ -672,21 +676,7 @@ fn grim_captures(wm: &Wm, dir: &Path, runtime: &Path, tree: &Value) {
         eprintln!("grim captures skipped: needs grim");
         return;
     }
-    let display = wm.sock.file_name().unwrap().to_string_lossy();
-    let display = display.strip_prefix("wm.").unwrap().strip_suffix(".sock").unwrap().to_string();
-    let grim = |args: &[&str], name: &str| -> (usize, usize, Vec<u8>) {
-        let path = dir.join(name);
-        let status = Command::new("grim")
-            .args(["-t", "ppm"])
-            .args(args)
-            .arg(&path)
-            .env("XDG_RUNTIME_DIR", runtime)
-            .env("WAYLAND_DISPLAY", &display)
-            .status()
-            .unwrap();
-        assert!(status.success(), "grim {args:?}");
-        read_ppm(&path)
-    };
+    let grim = |args: &[&str], name: &str| grim(wm, dir, runtime, args, name).unwrap_or_else(|| panic!("grim {args:?}"));
     let pixel = |w: usize, rgb: &[u8], x: usize, y: usize| rgb[(y * w + x) * 3..(y * w + x) * 3 + 3].to_vec();
     let near = |a: &[u8], b: &[u8]| a.iter().zip(b).all(|(&a, &b)| a.abs_diff(b) <= 2);
 
@@ -705,6 +695,23 @@ fn grim_captures(wm: &Wm, dir: &Path, runtime: &Path, tree: &Value) {
     let (w, h, rgb) = grim(&["-T", &id], "grim-window.ppm");
     assert_eq!((w as i64, h as i64), (theirs["width"].as_i64().unwrap(), theirs["height"].as_i64().unwrap()));
     assert!(!near(&pixel(w, &rgb, w / 2, h / 2), &[20, 20, 25]), "the window, not the background");
+}
+
+/// Capture with grim on wm's display: width, height, RGB rows; None if it
+/// failed.
+fn grim(wm: &Wm, dir: &Path, runtime: &Path, args: &[&str], name: &str) -> Option<(usize, usize, Vec<u8>)> {
+    let display = wm.sock.file_name().unwrap().to_string_lossy();
+    let display = display.strip_prefix("wm.").unwrap().strip_suffix(".sock").unwrap().to_string();
+    let path = dir.join(name);
+    let status = Command::new("grim")
+        .args(["-t", "ppm"])
+        .args(args)
+        .arg(&path)
+        .env("XDG_RUNTIME_DIR", runtime)
+        .env("WAYLAND_DISPLAY", &display)
+        .status()
+        .unwrap();
+    status.success().then(|| read_ppm(&path))
 }
 
 /// A binary PPM (grim -t ppm): width, height, RGB rows.
