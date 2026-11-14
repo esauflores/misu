@@ -99,8 +99,17 @@ Singleton {
 
     readonly property string fontPrimary: Config.fontFamily
     readonly property string fontJp: "Noto Sans CJK JP"
-    readonly property int fontSm: 14
-    readonly property int fontMd: 16
+    // Base card sizing, before Config.fontScale.
+    readonly property real cardScale: 1.0
+
+    // Type scale, like CSS's h1-h6: every text in the bar takes one of these
+    // (px, times a card's scale s where it has one), never a number of its own.
+    readonly property real h1: 24     // hero numbers (the battery level)
+    readonly property real h2: 18     // large headings
+    readonly property real h3: 16     // a track's title, subtitles, the lock's field
+    readonly property real h4: 13.5   // names, primary text
+    readonly property real h5: 12     // row text, labels
+    readonly property real h6: 10.5   // small, dim, meta
 
     // The brand seal drawn by BrandMark: text, or an image path when set.
     readonly property string mark: Config.markText

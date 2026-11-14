@@ -14,7 +14,6 @@ Item {
     property string widgetId: "mpris"
     signal menuRequested(string id, rect ownerRect)
 
-    MprisPlayer { id: mpris }
 
     implicitWidth: btn.implicitWidth
     implicitHeight: btn.implicitHeight
@@ -27,7 +26,7 @@ Item {
         onClicked: root.menuRequested("mpris", Qt.rect(btn.x, btn.y, btn.width, btn.height))
 
         MaterialIcon {
-            name: mpris.playing ? "graphic_eq" : "music_note"
+            name: MprisPlayer.playing ? "graphic_eq" : "music_note"
             color: btn.iconColor
             size: btn.glyphPx
         }

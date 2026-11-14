@@ -13,7 +13,10 @@ set -euo pipefail
 
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 M=$ROOT/modules
-MODULES=(base intel boot greeter wm bar theme shell apps)
+MODULES=(base intel boot greeter wm bar theme shell apps dictate)
+# Kept for later but not installed unless named (sudo ./install.sh dictate);
+# uninstalling everything still includes them.
+OPTIONAL=(dictate)
 
 DRY_RUN=0 UNINSTALL=0 PURGE=0 selected=()
 for arg; do
@@ -25,7 +28,11 @@ for arg; do
     *) [[ -d $M/$arg ]] || { echo "unknown module: $arg" >&2; exit 1; }; selected+=("$arg") ;;
   esac
 done
-(( ${#selected[@]} )) || selected=("${MODULES[@]}")
+if (( ! ${#selected[@]} )); then
+  for m in "${MODULES[@]}"; do
+    if (( UNINSTALL )) || [[ " ${OPTIONAL[*]} " != *" $m "* ]]; then selected+=("$m"); fi
+  done
+fi
 
 if (( ! DRY_RUN && EUID != 0 )); then echo "Run via sudo: sudo $0 $*" >&2; exit 1; fi
 
@@ -54,12 +61,14 @@ unlink_ours() { if [[ -L $1 && $(readlink "$1") == "$ROOT"/* ]]; then as_user rm
 # Exact name only: pacman -Q also answers for a package that provides it
 # (visual-studio-code-bin provides code).
 installed() { [[ $(pacman -Qq "$1" 2>/dev/null) == "$1" ]]; }
-module_packages() { grep -Ev '^[[:space:]]*(#|$)' "$M/$1/packages.txt" 2>/dev/null || true; }
+# A list file's entries: one per line, without comments and blank lines.
+list_file() { grep -Ev '^[[:space:]]*(#|$)' "$1" 2>/dev/null || true; }
+module_packages() { list_file "$M/$1/packages.txt"; }
 
 # Install the calling module's packages.txt.
 install_packages() {
   local pkgs; mapfile -t pkgs < <(module_packages "$1")
-  if (( ${#pkgs[@]} )); then as_user yay -S --needed --noconfirm --sudoloop "${pkgs[@]}"; fi
+  if (( ${#pkgs[@]} )); then as_user yay -S --needed --noconfirm --removemake "${pkgs[@]}"; fi
 }
 
 # With --packages, remove the module's installed packages; -u skips any that
@@ -82,6 +91,21 @@ if (( UNINSTALL )); then
   exit 0
 fi
 
+# yay runs as the user and calls sudo for pacman itself, which would ask for the
+# password again on every call. For this run only, the user may run pacman
+# through sudo without one; the rule goes when the script exits, however it does.
+sudoers=/etc/sudoers.d/zz-misu-install
+if (( DRY_RUN )); then echo "+ allow $target_user password-less sudo pacman until the install ends ($sudoers)"
+else
+  trap 'rm -f "$sudoers"' EXIT
+  trap 'exit 130' INT TERM
+  rule=$(mktemp)
+  printf '%s ALL=(root) NOPASSWD: /usr/bin/pacman\n' "$target_user" >"$rule"
+  visudo -cqf "$rule"
+  install -m440 "$rule" "$sudoers"
+  rm -f "$rule"
+fi
+
 # yay installs every module's packages, so bootstrap it and sync once up front.
 if ! command -v yay >/dev/null; then
   if (( DRY_RUN )); then echo '+ bootstrap yay from the AUR';
@@ -94,7 +118,7 @@ if ! command -v yay >/dev/null; then
   fi
 fi
 
-as_user yay -Syu --noconfirm --sudoloop
+as_user yay -Syu --noconfirm --removemake
 
 for m in "${MODULES[@]}"; do
   [[ " ${selected[*]} " == *" $m "* ]] || continue

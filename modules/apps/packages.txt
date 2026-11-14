@@ -1,8 +1,10 @@
 nautilus
-visual-studio-code-bin
-zen-browser-bin
+zed
+brave-origin-bin
 herdr-bin
-# AI CLIs
-claude-code
-openai-codex
-deepseek-harness-bin
+# System monitor (Super+Shift+T)
+btop
+# What Codex's sandbox and search use (the AI CLIs come from mise:
+# mise/config.toml)
+bubblewrap
+ripgrep

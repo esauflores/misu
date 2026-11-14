@@ -21,11 +21,15 @@ mkdir -p "$dir"
 [[ -f $dir/OVMF_VARS.fd ]] || cp "$ovmf/OVMF_VARS.4m.fd" "$dir/OVMF_VARS.fd"
 [[ -f $disk ]] || { qemu-img create -f qcow2 "$disk" 40G; set -- --iso "$@"; }
 
-# Host resolution from niri, scroll or sway; 1920x1080 when none answers.
+# Host resolution from wm, niri or sway; 1920x1080 when none answers.
 read -r width height < <({
-  niri msg --json focused-output | jq -r '.modes[.current_mode] | "\(.width) \(.height)"' \
-    || { scrollmsg -t get_outputs || swaymsg -t get_outputs; } \
-    | jq -r 'map(select(.focused))[0].current_mode | "\(.width) \(.height)"'
+  if [[ -n ${WM_SOCK:-} ]]; then
+    wm msg tree | jq -r '.result | . as $t | .seats[] | select(.id == 0) | .screen as $s | $t.screens[] | select(.id == $s) | "\(.width) \(.height)"'
+  elif command -v niri >/dev/null; then
+    niri msg --json focused-output | jq -r '.modes[.current_mode] | "\(.width) \(.height)"'
+  else
+    swaymsg -t get_outputs | jq -r 'map(select(.focused))[0].current_mode | "\(.width) \(.height)"'
+  fi
 } 2>/dev/null) || true
 [[ ${width:-} =~ ^[0-9]+$ ]] || { width=1920 height=1080; }
 

@@ -86,7 +86,7 @@ ShellRoot {
 
         Image {
             anchors.fill: parent
-            source: "file:///usr/share/backgrounds/rice/black-hole.webp"
+            source: "file:///usr/share/backgrounds/rice/black-hole.png"
             fillMode: Image.PreserveAspectCrop
             asynchronous: true
         }

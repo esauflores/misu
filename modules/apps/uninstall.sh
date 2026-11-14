@@ -1,16 +1,18 @@
-# apps: removes the links and the Zen defaults, and drops from VS Code's settings
-# each Misu default that still has Misu's value.
+# apps: removes the links and Brave Origin's policies.
 [[ ${BASH_SOURCE[0]} != "$0" ]] || { d=$(cd -- "$(dirname -- "$0")" && pwd -P); exec "$d/../../install.sh" --uninstall "${d##*/}" "$@"; }
 
+# Archify's skill copies (Claude Code and Codex), while mise's npx is still there.
+as_user env HOME="$home" bash -c 'cd && mise exec -- npx -y skills@latest remove archify --global --yes' || true
 unlink_ours "$home/.config/herdr/config.toml"
 unlink_ours "$home/.config/mimeapps.list"
-run rm -f /opt/zen-browser-bin/browser/defaults/preferences/misu.js
-
-vscode_settings="$home/.config/Code/User/settings.json"
-if (( DRY_RUN )); then
-  echo "+ remove Misu defaults from $vscode_settings"
-elif as_user jq -e . "$vscode_settings" >/dev/null 2>&1; then
-  as_user bash -c 'tmp=$(mktemp); jq --slurpfile m "$2" "reduce (\$m[0] | keys[]) as \$k (.; if .[\$k] == \$m[0][\$k] then del(.[\$k]) else . end)" "$1" >"$tmp" && cat "$tmp" >"$1"; status=$?; rm -f "$tmp"; exit "$status"' _ "$vscode_settings" "$M/apps/vscode/settings.json"
-fi
+unlink_ours "$home/.config/mise/config.toml"
+for app in qv4l2 qvidcap qt6ct; do unlink_ours "$home/.local/share/applications/$app.desktop"; done
+unlink_ours "$home/.local/share/applications/dev.zed.Zed.desktop"
+# Zed's theme link; its settings.json is the user's, Misu's merged keys stay.
+if [[ -L $home/.config/zed/themes/misu.json ]]; then as_user rm "$home/.config/zed/themes/misu.json"; fi
+# btop's palette theme (the link into ~/.local/state/rice); btop.conf is the user's.
+if [[ -L $home/.config/btop/themes/misu.theme ]]; then as_user rm "$home/.config/btop/themes/misu.theme"; fi
+unlink_ours "$home/.config/brave-origin-flags.conf"
+run rm -f /etc/brave/policies/managed/misu.json
 
 remove_packages apps

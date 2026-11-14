@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# misu-ai-shot [FILE]: screenshot the agent seat's view.
+set -euo pipefail
+file=${1:-${XDG_RUNTIME_DIR:?}/misu-agent-seat-${MISU_AGENT_SEAT:-1}.png}
+exec misu-agent-seat screenshot "$file"

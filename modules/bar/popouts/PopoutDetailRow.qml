@@ -13,13 +13,14 @@ Item {
     property string value: ""
     property bool toggle: false
     property bool on: false
+    property real size: Theme.h6   // a Theme size, before scaling
     signal toggled()
 
     readonly property color ink: Theme.ink(Theme.effectiveSurface)
     readonly property color inkDim: Theme.inkOn(Theme.effectiveSurface, Theme.surfaceVariantText, 3.0)
     readonly property color line: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.14)
 
-    implicitHeight: 19 * root.s
+    implicitHeight: (root.size + 9) * root.s
 
     Text {
         anchors.left: parent.left
@@ -27,7 +28,7 @@ Item {
         text: (root.label)
         color: root.inkDim
         font.family: Theme.fontPrimary
-        font.pixelSize: 10 * root.s
+        font.pixelSize: root.size * root.s
     }
     Text {
         visible: !root.toggle
@@ -36,7 +37,7 @@ Item {
         text: root.value
         color: root.ink
         font.family: Theme.fontPrimary
-        font.pixelSize: 10 * root.s
+        font.pixelSize: root.size * root.s
         elide: Text.ElideLeft
         width: Math.min(implicitWidth, root.width * 0.6)
         horizontalAlignment: Text.AlignRight

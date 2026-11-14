@@ -1,0 +1,25 @@
+{
+  "auto_install_extensions": {
+    "qml": true,
+    "toml": true,
+    "basher": true,
+    "ini": true,
+    "git-firefly": true,
+    "material-icon-theme": true,
+    "env": true,
+    "catppuccin": true
+  },
+  "ui_font_size": 14.4,
+  "buffer_font_size": 13.5,
+  "wrap_guides": [120],
+  "show_wrap_guides": true,
+  "project_panel": { "dock": "right", "hide_gitignore": true },
+  "outline_panel": { "dock": "right" },
+  "git_panel": { "dock": "right" },
+  "agent": { "enabled": false, "button": false },
+  "buffer_font_family": "JetBrainsMono Nerd Font",
+  "buffer_font_fallbacks": ["monospace"],
+  "terminal": { "font_family": "JetBrainsMono Nerd Font", "font_fallbacks": ["monospace"] },
+  "theme": { "mode": "dark", "light": "One Light", "dark": "Misu" },
+  "icon_theme": "Material Icon Theme"
+}

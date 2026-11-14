@@ -94,18 +94,18 @@ Item {
     Column {
         id: col
         width: parent.width
-        spacing: 7 * root.s
+        spacing: 12 * root.s
 
         // identity: boxed glyph, name + status, detail toggle.
         Item {
             width: parent.width
-            height: 30 * root.s
+            height: 38 * root.s
 
             Rectangle {
                 id: iconTile
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                width: 30 * root.s
+                width: 38 * root.s
                 height: width
                 radius: 4 * root.s
                 color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.05)
@@ -113,7 +113,7 @@ Item {
                 border.color: root.line
                 MaterialIcon {
                     anchors.centerIn: parent
-                    size: 16 * root.s
+                    size: 19 * root.s
                     name: BtLink.glyphFor(root.device)
                     color: root.connected ? root.ink : root.inkDim
                     opacity: root.connecting ? 0.55 : 1
@@ -130,7 +130,7 @@ Item {
                 id: infoBtn
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
-                width: 20 * root.s
+                width: 24 * root.s
                 height: width
                 radius: 4 * root.s
                 color: root.detailOpen ? Theme.inverseSurface
@@ -141,7 +141,7 @@ Item {
                 Behavior on color { ColorAnimation { duration: Motion.fast } }
                 MaterialIcon {
                     anchors.centerIn: parent
-                    size: 12 * root.s
+                    size: 14 * root.s
                     name: "info"
                     color: root.detailOpen ? Theme.inverseOnSurface : root.inkDim
                 }
@@ -151,17 +151,17 @@ Item {
 
             Column {
                 anchors.left: iconTile.right
-                anchors.leftMargin: 9 * root.s
+                anchors.leftMargin: 12 * root.s
                 anchors.right: infoBtn.left
-                anchors.rightMargin: 7 * root.s
+                anchors.rightMargin: 10 * root.s
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 1 * root.s
+                spacing: 3 * root.s
                 Text {
                     width: parent.width
                     text: BtLink.label(root.device)
                     color: root.ink
                     font.family: Theme.fontPrimary
-                    font.pixelSize: 12.5 * root.s
+                    font.pixelSize: Theme.h4 * root.s
                     font.weight: Font.DemiBold
                     elide: Text.ElideRight
                 }
@@ -180,7 +180,7 @@ Item {
                     }
                     color: root.inkDim
                     font.family: Theme.fontPrimary
-                    font.pixelSize: 9 * root.s
+                    font.pixelSize: Theme.h6 * root.s
                     elide: Text.ElideRight
                 }
             }
@@ -189,12 +189,12 @@ Item {
         // stat line: battery gauge, codec, profile flip.
         Row {
             width: parent.width
-            spacing: 6 * root.s
+            spacing: 10 * root.s
             visible: root.battery >= 0 || (root.connected && root.isCurrentSink)
 
             Row {
                 visible: root.battery >= 0
-                spacing: 4 * root.s
+                spacing: 6 * root.s
                 PopoutBatteryGauge {
                     anchors.verticalCenter: parent.verticalCenter
                     s: root.s
@@ -208,7 +208,7 @@ Item {
                     text: root.battery + "%"
                     color: root.lowBattery ? Theme.error : root.ink
                     font.family: Theme.fontPrimary
-                    font.pixelSize: 9.5 * root.s
+                    font.pixelSize: Theme.h6 * root.s
                     font.features: ({ "tnum": 1 })
                 }
             }
@@ -234,14 +234,14 @@ Item {
         Item {
             id: vol
             width: parent.width
-            height: 14 * root.s
+            height: 22 * root.s
             visible: root.connected && root.isCurrentSink && Audio.sink && Audio.sink.audio
             readonly property real frac: (Audio.sink && Audio.sink.audio) ? Math.max(0, Math.min(1, Audio.sink.audio.volume)) : 0
             MaterialIcon {
                 id: volIcon
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                size: 12 * root.s
+                size: 15 * root.s
                 name: "speaker"
                 color: root.inkDim
             }
@@ -252,17 +252,17 @@ Item {
                 text: Math.round(vol.frac * 100) + "%"
                 color: root.inkDim
                 font.family: Theme.fontPrimary
-                font.pixelSize: 9 * root.s
+                font.pixelSize: Theme.h6 * root.s
                 font.features: ({ "tnum": 1 })
             }
             Rectangle {
                 id: volTrack
                 anchors.left: volIcon.right
                 anchors.right: volPct.left
-                anchors.leftMargin: 8 * root.s
-                anchors.rightMargin: 8 * root.s
+                anchors.leftMargin: 12 * root.s
+                anchors.rightMargin: 12 * root.s
                 anchors.verticalCenter: parent.verticalCenter
-                height: 2.5 * root.s
+                height: 3 * root.s
                 radius: 1 * root.s
                 color: root.line
                 Rectangle {

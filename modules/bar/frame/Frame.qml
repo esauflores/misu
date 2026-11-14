@@ -11,7 +11,7 @@ import ".."
 // width on the right edge, plus a full-screen transparent overlay holding the
 // painted frame, the rail and this monitor's rail cards. Input reaches the
 // overlay only over the rail, its 1px reveal strip and an open card; the rest
-// clicks through. The overlay hides while a window is fullscreen here.
+// clicks through. wm hides this Top layer while the view is fullscreen.
 Scope {
     id: root
 
@@ -31,28 +31,22 @@ Scope {
     PanelWindow {
         id: overlay
 
-        // Card size, tuned for this laptop's 1366x768 panel, times the font
-        // scale. Change the 0.8 when the screen changes (about 1.0 for 1080p).
-        readonly property real s: 0.8 * Config.fontScale
-
-        readonly property bool monFullscreen: Wm.outputHasFullscreen(root.modelData ? root.modelData.name : "")
-        onMonFullscreenChanged: if (monFullscreen) cards.closeAll()
+        readonly property real s: Theme.cardScale * Config.fontScale
 
         screen: root.modelData
         color: "transparent"
         exclusionMode: ExclusionMode.Ignore
         WlrLayershell.layer: WlrLayer.Top
-        WlrLayershell.keyboardFocus: cards.keyboardMode === "ondemand" ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+        WlrLayershell.keyboardFocus: cards.keyboardMode === "exclusive" ? WlrKeyboardFocus.Exclusive
+            : cards.keyboardMode === "ondemand" ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
         WlrLayershell.namespace: "misu"
         anchors { top: true; left: true; right: true; bottom: true }
 
         // While a card shows, the whole surface takes input so a click outside
         // can close it.
-        mask: overlay.monFullscreen ? hiddenRegion
-            : cards.anyVisible ? fullRegion
+        mask: cards.anyVisible ? fullRegion
             : railRegion
 
-        Region { id: hiddenRegion }
         Region { id: fullRegion; width: overlay.width; height: overlay.height }
         Region {
             id: railRegion
@@ -77,7 +71,6 @@ Scope {
         FocusScope {
             anchors.fill: parent
             focus: cards.anyOpen
-            visible: !overlay.monFullscreen
             Keys.onEscapePressed: cards.closeAll()
 
             // The painted band: the rail's surface with the screen-side hole's
@@ -107,7 +100,6 @@ Scope {
                 scale: overlay.s
                 group: QtObject { property color color: Theme.surface }
                 railClearance: Math.max(root.reserve, Config.frameThickness)
-                active: !overlay.monFullscreen
                 Component.onCompleted: ShellState.registerMenus(cards.monitorName, cards)
                 Component.onDestruction: ShellState.registerMenus(cards.monitorName, null)
             }

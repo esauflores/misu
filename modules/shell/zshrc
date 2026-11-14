@@ -1,6 +1,6 @@
 # Prompt, history, completion and command-line tools.
 
-HISTFILE=${XDG_STATE_HOME:-$HOME/.local/state}/zsh/history
+export HISTFILE=${XDG_STATE_HOME:-$HOME/.local/state}/zsh/history
 HISTSIZE=50000
 SAVEHIST=50000
 mkdir -p "${HISTFILE:h}"
@@ -15,7 +15,24 @@ eval "$(starship init zsh)"
 eval "$(zoxide init zsh --cmd cd)"
 eval "$(fzf --zsh)"
 
+# mise tools (apps/mise/config.toml: the AI CLIs and their Node).
+eval "$(mise activate zsh)"
+
+(( $+commands[atuin] )) && eval "$(atuin init zsh)"
+
+# ls as eza, every listing a table: ls/ll without dotfiles, la/l/lsa with them
+# (Oh My Zsh's names; eza's -a skips . and ..); lt a tree.
+if (( $+commands[eza] )); then
+  alias ls='eza -l --icons --git --header --group-directories-first'
+  alias ll='ls'
+  alias la='ls -a'
+  alias l='la'
+  alias lsa='la'
+  alias lt='eza -T -L2 --icons --group-directories-first'
+fi
+
 case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) export PATH="$HOME/.local/bin:$PATH" ;; esac
 
 # New terminals open in ~/Projects (only when they would start in ~).
 [[ -o interactive && $PWD == $HOME && -d ~/Projects ]] && builtin cd ~/Projects
+

@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# misu-ai-workspace [N]: select a workspace for the agent seat.
+set -euo pipefail
+exec misu-agent-seat workspace "${1:-1}"

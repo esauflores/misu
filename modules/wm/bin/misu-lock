@@ -1,11 +1,24 @@
 #!/usr/bin/env bash
+# misu-lock: lock the session with the bar's lock screen (drawn like the
+# greeter), and return once it is up, so swayidle's before-sleep lock is in
+# place before the machine sleeps. Falls back to swaylock when the bar isn't
+# running. Used by Super+L, the bar's session card and swayidle (before sleep).
 set -euo pipefail
 
+if qs -c misu ipc call lock lock >/dev/null 2>&1; then
+  for _ in $(seq 40); do
+    [[ $(qs -c misu ipc call lock isLocked 2>/dev/null) == true ]] && exit 0
+    sleep 0.05
+  done
+fi
+
+# Fallback: swaylock over the current wallpaper.
+
 wallpaper=$(misu-wall current 2>/dev/null || true)
-[[ -f $wallpaper ]] || wallpaper=/usr/share/backgrounds/rice/black-hole.webp
+[[ -f $wallpaper ]] || wallpaper=/usr/share/backgrounds/rice/black-hole.png
 
 exec swaylock -f \
-  --image "$wallpaper" --scaling fill --indicator \
+  --image "$wallpaper" --scaling fill --indicator-idle-visible \
   --indicator-radius 90 --indicator-thickness 6 \
   --inside-color 121318cc --inside-clear-color 242531cc \
   --ring-color c1c5dd --ring-clear-color f6c5b6 \

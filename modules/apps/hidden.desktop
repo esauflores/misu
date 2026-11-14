@@ -1,0 +1,6 @@
+# Linked over the system entries Misu hides from the launcher (see install.sh):
+# a same-named entry in ~/.local/share/applications replaces the system one.
+[Desktop Entry]
+Type=Application
+Name=Hidden by Misu
+NoDisplay=true

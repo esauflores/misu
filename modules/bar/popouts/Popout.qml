@@ -20,12 +20,6 @@ Item {
     property real radius: Theme.radiusWidget
     property string edge: "left"          // "left" | "right" | "top" | "bottom"
     property string align: "center"       // "start" | "center" | "end" (along the edge)
-    // A centred (modal) surface: the body floats at the exact centre of the
-    // screen instead of docking to an edge, so `edge`, `align` and the edge
-    // clamps do not apply and every corner is rounded. Nothing welds into a
-    // frame border, so it only ever opens from an explicit pin (keybind, IPC,
-    // a click) with `hoverOpen` off.
-    property bool centered: false
     // When non-negative, centre the body at this coordinate along the edge;
     // negative values fall back to `align`.
     property real alongCenter: -1
@@ -34,19 +28,12 @@ Item {
     // Perpendicular gap from the growing edge to the body, so a surface can
     // float slightly off the frame lip instead of abutting it. 0 = flush.
     property real edgeGap: 0
-    // full-height sidebar: the body fills the frame top-to-bottom and fuses into
-    // the top AND bottom borders (not only the edge it grows from), so it reads
-    // as the whole side of the frame swelling open, no gap at either end. only
-    // meaningful for a left/right edge.
-    property bool fullSpan: false
     // Size melts only while settled open (content resize / detail expand). During
     // the open/close transition the size snaps so the reveal is purely the prog
     // curtain -- otherwise a low widget whose card is clamped to fit slides
     // vertically as the animating openH trips the edge clamp (the battery flicker).
     Behavior on openW { enabled: root.heldOpen && root.prog > 0.98; NumberAnimation { duration: Motion.spatial; easing.type: Easing.BezierSpline; easing.bezierCurve: Motion.spatialCurve } }
     Behavior on openH { enabled: root.heldOpen && root.prog > 0.98; NumberAnimation { duration: Motion.spatial; easing.type: Easing.BezierSpline; easing.bezierCurve: Motion.spatialCurve } }
-    property real hoverW: 0                // hover-band span along the edge (0 = match body)
-    property real hoverH: 0                // hover-band depth from the edge (0 = frameThickness)
     property real s: 1
     property bool pinned: false           // force open (IPC / inspection)
     // False disables the edge hover band, so only an explicit pin opens the
@@ -96,14 +83,12 @@ Item {
     readonly property bool atTop: edge === "top"
     readonly property bool atBottom: edge === "bottom"
     readonly property bool vertical: atLeft || atRight   // body grows horizontally
-    readonly property bool spanning: fullSpan && vertical
     // the body-hover hold only applies to hover-driven popouts (edge band or a
     // bar module): a click-pinned popout must close the moment it's unpinned
     // (close button, Escape, keybind re-toggle), even under the pointer.
     readonly property bool hovered: (hoverOpen && triggerHH.hovered) || triggerHovered
-        || (bodyHH.hovered && (hoverOpen || centered || closeDelay > 0))
-    // host gates this off while a centre surface is open or a window is
-    // fullscreen, so an edge hover never fights a modal surface.
+        || (bodyHH.hovered && (hoverOpen || closeDelay > 0))
+    // The host disables cards while a window is fullscreen.
     property bool active: true
     readonly property bool shouldOpen: active && (hovered || pinned)
 
@@ -151,17 +136,14 @@ Item {
     readonly property real curH: Math.max(0, bodyOpenH * prog)
     // the gap holds the open body off the frame lip but drains with prog, so the
     // close melt retracts fully into the frame edge instead of stranding a gap.
-    readonly property real bodyX: centered ? (width - curW) / 2
-                                 : atLeft ? frameThickness + edgeGap * prog
+    readonly property real bodyX: atLeft ? frameThickness + edgeGap * prog
                                  : atRight ? (width - frameThickness - curW - edgeGap * prog)
                                  : alongX + (bodyOpenW - curW) / 2
-    readonly property real bodyY: centered ? (height - curH) / 2
-                                 : spanning ? 0
-                                 : atTop ? frameThickness + edgeGap * prog
+    readonly property real bodyY: atTop ? frameThickness + edgeGap * prog
                                  : atBottom ? (height - frameThickness - curH - edgeGap * prog)
                                  : alongY + (bodyOpenH - curH) / 2
     readonly property real bodyW: curW
-    readonly property real bodyH: spanning ? height : curH
+    readonly property real bodyH: curH
 
     // hover trigger = the frame border itself: a thin strip of the frame next
     // to the popout, `frameThickness` deep (same pixels the mixer/power popouts
@@ -182,13 +164,10 @@ Item {
     // starts. prog never appears here, so a melt tick cannot recommit the
     // wayland input region 60 times a second (the close-time frame drops), and
     // a melting body stops eating clicks the instant it is dismissed.
-    readonly property real maskX: centered ? (width - bodyOpenW) / 2
-                                : atLeft ? frameThickness + edgeGap
+    readonly property real maskX: atLeft ? frameThickness + edgeGap
                                 : atRight ? (width - frameThickness - bodyOpenW - edgeGap)
                                 : alongX
-    readonly property real maskY: centered ? (height - bodyOpenH) / 2
-                                : spanning ? 0
-                                : atTop ? frameThickness + edgeGap
+    readonly property real maskY: atTop ? frameThickness + edgeGap
                                 : atBottom ? (height - frameThickness - bodyOpenH - edgeGap)
                                 : alongY
     readonly property real maskW: heldOpen ? bodyOpenW : 0
@@ -228,14 +207,14 @@ Item {
         antialiasing: true
         // a closed zero-size body is dropped entirely
         visible: root.prog > 0.004
-        topLeftRadius: (!root.centered && (root.atTop || root.atLeft || root.spanning)) ? 0 : root.radius
-        topRightRadius: (!root.centered && (root.atTop || root.atRight || root.spanning)) ? 0 : root.radius
-        bottomLeftRadius: (!root.centered && (root.atBottom || root.atLeft || root.spanning)) ? 0 : root.radius
-        bottomRightRadius: (!root.centered && (root.atBottom || root.atRight || root.spanning)) ? 0 : root.radius
+        topLeftRadius: (root.atTop || root.atLeft) ? 0 : root.radius
+        topRightRadius: (root.atTop || root.atRight) ? 0 : root.radius
+        bottomLeftRadius: (root.atBottom || root.atLeft) ? 0 : root.radius
+        bottomRightRadius: (root.atBottom || root.atRight) ? 0 : root.radius
         x: root.bodyX
-        y: root.spanning ? -60 : root.bodyY
+        y: root.bodyY
         implicitWidth: Math.max(0, root.bodyW)
-        implicitHeight: root.spanning ? (root.height + 120) : Math.max(0, root.bodyH)
+        implicitHeight: Math.max(0, root.bodyH)
     }
 
     // content at full size, revealed by a widening clip anchored to the border

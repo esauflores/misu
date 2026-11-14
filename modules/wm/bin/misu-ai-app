@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# misu-ai-app open COMMAND… | focus WINDOW_ID | list
+set -euo pipefail
+case ${1:-} in
+  open) shift; exec misu-agent-seat spawn "$@" ;;
+  focus) exec misu-agent-seat focus-window "${2:?window id required}" ;;
+  list) exec misu-agent-seat tree ;;
+  *) echo 'usage: misu-ai-app open COMMAND… | focus WINDOW_ID | list' >&2; exit 2 ;;
+esac

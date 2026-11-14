@@ -29,12 +29,12 @@ Item {
     component Small: Text {
         color: root.dim
         font.family: Theme.fontPrimary
-        font.pixelSize: 11 * root.s
+        font.pixelSize: Theme.h5 * root.s
     }
     component Head: Text {
         color: root.ink
         font.family: Theme.fontPrimary
-        font.pixelSize: 12 * root.s
+        font.pixelSize: Theme.h5 * root.s
         font.weight: Font.DemiBold
     }
 
@@ -98,34 +98,27 @@ Item {
         // header: the 力 seal and title, and how long ago the numbers were fetched
         Item {
             width: parent.width
-            height: title.implicitHeight
-            BrandMark {
-                id: seal
-                anchors.verticalCenter: title.verticalCenter
-                size: 13 * root.s
-                color: Theme.vermLit
-            }
-            Head {
-                id: title
-                anchors.left: seal.right
-                anchors.leftMargin: 7 * root.s
-                text: "AI usage"
-                font.pixelSize: 14 * root.s
+            height: 20 * root.s
+            PopoutTitle {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: "AI USAGE"
+                s: root.s
             }
             Small {
                 anchors.right: reload.left
                 anchors.rightMargin: 6 * root.s
-                anchors.baseline: title.baseline
+                anchors.verticalCenter: parent.verticalCenter
                 text: AiUsage.refreshing ? "updating…"
                     : (AiUsage.stale ? "stale · " : "") + "updated %1".arg(Calc.ago(AiUsage.updated, AiUsage.now))
                 visible: AiUsage.updated > 0 || AiUsage.refreshing
                 color: AiUsage.stale ? root.warn : root.dim
-                font.pixelSize: 10 * root.s
+                font.pixelSize: Theme.h6 * root.s
             }
             PopoutHeadButton {
                 id: reload
                 anchors.right: parent.right
-                anchors.verticalCenter: title.verticalCenter
+                anchors.verticalCenter: parent.verticalCenter
                 s: root.s
                 glyph: "restart_alt"
                 spin: AiUsage.refreshing
@@ -135,12 +128,24 @@ Item {
 
         Item { width: 1; height: 12 * root.s }
 
-        // tabs: one pill per provider, the selected one filled
-        Row {
+        // tabs: one segmented control, a segment per provider, the
+        // selected one filled to a bone plate (as PopoutSetting's)
+        Item {
             visible: AiUsage.providers.length > 0
             width: parent.width
-            spacing: 6 * root.s
-            bottomPadding: 12 * root.s
+            height: tabs.height + 12 * root.s
+
+        Rectangle {
+            id: tabs
+            width: parent.width
+            height: 24 * root.s
+            radius: 3 * root.s
+            color: "transparent"
+            border.width: Theme.borderWidth
+            border.color: root.line
+
+        Row {
+            anchors.fill: parent
 
             Repeater {
                 model: AiUsage.providers
@@ -149,12 +154,11 @@ Item {
                     required property var modelData
                     readonly property bool active: root.current !== null && root.current.id === modelData.id
 
-                    width: (content.width - 6 * root.s * (AiUsage.providers.length - 1)) / AiUsage.providers.length
-                    height: 28 * root.s
-                    radius: height / 2
-                    color: tabItem.active ? root.line : tabArea.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.07) : "transparent"
-                    border.width: Theme.borderWidth
-                    border.color: root.line
+                    width: tabs.width / AiUsage.providers.length
+                    height: tabs.height
+                    radius: 3 * root.s
+                    color: tabItem.active ? Theme.inverseSurface : tabArea.containsMouse ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.10) : "transparent"
+                    Behavior on color { ColorAnimation { duration: Motion.fast } }
 
                     Row {
                         anchors.centerIn: parent
@@ -169,10 +173,13 @@ Item {
                             smooth: true
                             opacity: tabItem.active ? 1 : 0.6
                         }
-                        Head {
+                        Text {
                             anchors.verticalCenter: parent.verticalCenter
                             text: tabItem.modelData.name
-                            color: tabItem.active ? root.ink : root.dim
+                            color: tabItem.active ? Theme.inverseOnSurface : root.ink
+                            font.family: Theme.fontPrimary
+                            font.pixelSize: Theme.h6 * root.s
+                            font.weight: Font.Medium
                         }
                     }
                     MouseArea {
@@ -184,6 +191,8 @@ Item {
                     }
                 }
             }
+        }
+        }
         }
 
         Small {
@@ -210,7 +219,7 @@ Item {
                     width: parent.width
                     elide: Text.ElideLeft
                     text: [prov.modelData.plan, prov.modelData.account].filter(t => t !== "").join(" · ")
-                    font.pixelSize: 10 * root.s
+                    font.pixelSize: Theme.h6 * root.s
                 }
 
                 Small {
@@ -252,7 +261,7 @@ Item {
                                 anchors.right: parent.right
                                 text: row.gauge ? Math.round(row.modelData.pct) + "%" : row.modelData.value
                                 color: row.accent
-                                font.pixelSize: 18 * root.s
+                                font.pixelSize: Theme.h2 * root.s
                                 font.weight: Font.Medium
                                 font.features: ({ "tnum": 1 })
                             }

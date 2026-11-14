@@ -48,3 +48,6 @@ The bar config is linked, so the running bar picks up edits after a reload:
 `qs kill -c misu; qs -c misu` in the session, or in the VM over SSH (see the
 `test-in-vm` skill). Open the card with
 `qs -c misu ipc call menu toggle <kind>` and screenshot with `grim`.
+
+Compositor state comes from `services/Wm.qml` (`wm msg subscribe`). Target seat
+0 for the user's workspace controls. Agent-seat cursors are drawn by wm.

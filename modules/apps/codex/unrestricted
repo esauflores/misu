@@ -1,0 +1,36 @@
+#!/usr/bin/env bash
+# Run Codex unrestricted, like Claude Code here: no sandbox, no approval
+# prompts, and network access should workspace-write be picked anyway.
+# Sets these keys in Codex's config ($1, default ~/.codex/config.toml), adding
+# them when missing and leaving the rest (Codex rewrites the file) as it is.
+set -euo pipefail
+conf=${1:-$HOME/.codex/config.toml}
+install -d -m700 "$(dirname "$conf")"
+[[ -e $conf ]] || install -m600 /dev/null "$conf"
+tmp=$(mktemp)
+trap 'rm -f "$tmp"' EXIT
+awk '
+  function top_missing() {
+    if (!set["sandbox_mode"]) print "sandbox_mode = \"danger-full-access\""
+    if (!set["approval_policy"]) print "approval_policy = \"never\""
+    top_done = 1
+  }
+  BEGIN { want["sandbox_mode"] = "\"danger-full-access\""; want["approval_policy"] = "\"never\"" }
+  /^[[:space:]]*\[/ {
+    if (!top_done) top_missing()
+    if (sec && !net) { print "network_access = true"; net = 1 }
+    sec = ($0 ~ /^[[:space:]]*\[sandbox_workspace_write\][[:space:]]*(#.*)?$/)
+  }
+  !top_done && match($0, /^[[:space:]]*(sandbox_mode|approval_policy)[[:space:]]*=/) {
+    k = $0; sub(/^[[:space:]]*/, "", k); sub(/[[:space:]]*=.*/, "", k)
+    if (!set[k]) print k " = " want[k]; set[k] = 1; next
+  }
+  sec && /^[[:space:]]*network_access[[:space:]]*=/ { if (!net) print "network_access = true"; net = 1; next }
+  { print }
+  END {
+    if (!top_done) top_missing()
+    if (sec && !net) { print "network_access = true"; net = 1 }
+    if (!net) printf "\n[sandbox_workspace_write]\nnetwork_access = true\n"
+  }
+' "$conf" >"$tmp"
+cmp -s "$tmp" "$conf" || cat "$tmp" >"$conf"

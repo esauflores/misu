@@ -6,8 +6,8 @@ import qs.services
 import "../.."
 
 // One per-app mixer row, shared by the audio menu and the audio popout: the app
-// icon doubles as a mute toggle and the app name sits above its own live VU
-// fader. A capture row (an app recording the mic) carries a small vermilion mic
+// icon doubles as a mute toggle, then the app's name and its own live VU
+// fader on the same line. A capture row (an app recording the mic) carries a small vermilion mic
 // tag so a streamer can see who is on the input at a glance. Reads live from the
 // stream node via Audio.
 Row {
@@ -49,28 +49,24 @@ Row {
         }
     }
 
-    Column {
-        width: root.width - (20 + 8) * root.s
-        spacing: 1 * root.s
-
-        Text {
-            width: parent.width
-            text: Audio.streamName(root.stream)
-            elide: Text.ElideRight
-            color: Theme.inkOn(Theme.effectiveSurface, root.appMuted ? Theme.surfaceVariantText : Theme.surfaceText, 3.0)
-            font.family: Theme.fontPrimary
-            font.pixelSize: 10.5 * root.s
-            font.weight: Font.Medium
-        }
-        HFader {
-            width: parent.width
-            s: root.s
-            showIcon: false
-            lit: root.open
-            value: root.appAudio ? root.appAudio.volume : 0
-            muted: root.appMuted
-            valueLabel: root.appAudio ? (root.appMuted ? "off" : Math.round(root.appAudio.volume * 100) + "%") : ""
-            onMoved: v => { if (root.appAudio) root.appAudio.volume = v; }
-        }
+    Text {
+        width: 52 * root.s
+        anchors.verticalCenter: parent.verticalCenter
+        text: Audio.streamName(root.stream)
+        elide: Text.ElideRight
+        color: Theme.inkOn(Theme.effectiveSurface, root.appMuted ? Theme.surfaceVariantText : Theme.surfaceText, 3.0)
+        font.family: Theme.fontPrimary
+        font.pixelSize: Theme.h5 * root.s
+    }
+    HFader {
+        width: root.width - (20 + 52 + 8 * 2) * root.s
+        anchors.verticalCenter: parent.verticalCenter
+        s: root.s
+        showIcon: false
+        lit: root.open
+        value: root.appAudio ? root.appAudio.volume : 0
+        muted: root.appMuted
+        valueLabel: root.appAudio ? (root.appMuted ? "off" : Math.round(root.appAudio.volume * 100) + "%") : ""
+        onMoved: v => { if (root.appAudio) root.appAudio.volume = v; }
     }
 }

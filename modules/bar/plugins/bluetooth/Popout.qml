@@ -9,7 +9,8 @@ import qs.services
 
 // Bluetooth popout: a frame-edge card (the shared PopoutCard skin, so it opens,
 // melts and dismisses exactly like the music card) leading with the hero for the
-// focused device, then a compact rail of hairline chips to switch, connect or
+// focused device, then flat rows (your other devices, then named ones nearby
+// while scanning) to switch, connect or
 // pair the rest; power and scan ride the head. Everything is live off
 // Quickshell.Bluetooth and the Audio graph; connecting a bonded device is
 // instant, pairing a fresh one shells the reliable bluetoothctl pair/trust/
@@ -34,7 +35,13 @@ Item {
 
     readonly property var devices: (root.adapterOn && Bluetooth.devices) ? Bluetooth.devices.values : []
     readonly property var known: root.devices.filter(d => d && (d.paired || d.bonded))
-    readonly property var found: root.devices.filter(d => d && !(d.paired || d.bonded) && d.name && d.name.length > 0)
+    // a scanned device with no name of its own carries its address as the
+    // name (7B-A3-4C-…); those are beacons and strangers' gadgets, not
+    // something to pair with from here, so they stay out of the list.
+    function nameless(d) {
+        return !d.name || /^([0-9A-F]{2}[-:]){5}[0-9A-F]{2}$/i.test(d.name);
+    }
+    readonly property var found: root.devices.filter(d => d && !(d.paired || d.bonded) && !root.nameless(d))
 
     property string focusAddr: ""
     readonly property var connectedDev: {
@@ -54,18 +61,19 @@ Item {
     readonly property var focusDev: root.deviceByAddr(root.focusAddr) || root.connectedDev
         || (root.known.length > 0 ? root.known[0] : null)
 
-    readonly property var railDevices: {
+    // the rows under the hero: your other paired devices, then (while
+    // scanning) the named devices nearby, the first few until "N more".
+    function notFocus(d) {
         const fa = root.focusDev ? ((root.focusDev.address || "") + "").toUpperCase() : "";
-        const out = [];
-        for (let i = 0; i < root.known.length; i++)
-            if (((root.known[i].address || "") + "").toUpperCase() !== fa)
-                out.push(root.known[i]);
-        if (root.discovering)
-            for (let j = 0; j < root.found.length; j++)
-                if (((root.found[j].address || "") + "").toUpperCase() !== fa)
-                    out.push(root.found[j]);
-        return out;
+        return ((d.address || "") + "").toUpperCase() !== fa;
     }
+    readonly property var railKnown: root.known.filter(d => root.notFocus(d))
+    readonly property var railFound: root.discovering ? root.found.filter(d => root.notFocus(d)) : []
+    readonly property var railDevices: root.railKnown.concat(root.railFound)
+    readonly property int shortList: 6
+    property bool showAll: false
+    readonly property var shownFound: root.showAll ? root.railFound
+        : root.railFound.slice(0, root.shortList)
 
     property string busyAddr: ""
     property string errorText: ""
@@ -76,6 +84,7 @@ Item {
         BtLink.watch(root.open);
         if (!root.open) {
             root.stopScan();
+            root.showAll = false;
             root.focusAddr = "";
             root.busyAddr = "";
             root.errorText = "";
@@ -159,63 +168,63 @@ Item {
     // the shared card skin: same frame + click-swallow the music card uses.
     PopoutCard { anchors.fill: parent }
 
-    // a hairline device chip in the rail: class glyph, name, connected/pending pip.
-    component DeviceChip: Item {
-        id: chip
+    // a device row, flat like the network card's: class glyph, name, and on
+    // the right its state (connecting, battery, connected; "Pair" on hover for
+    // a new one). Tap focuses it in the hero and connects or pairs.
+    component DeviceRow: Item {
+        id: row
         property var dev: null
-        readonly property bool conn: chip.dev && chip.dev.connected
-        readonly property bool pend: chip.dev && (chip.dev.pairing
-            || root.busyAddr === ((chip.dev.address || "") + ""))
-        implicitHeight: 24 * root.s
-        implicitWidth: chipRow.implicitWidth + 14 * root.s
+        readonly property bool conn: row.dev && row.dev.connected
+        readonly property bool pend: row.dev && (row.dev.pairing
+            || root.busyAddr === ((row.dev.address || "") + ""))
+        readonly property bool fresh: row.dev && !(row.dev.paired || row.dev.bonded)
+        readonly property int battery: BtLink.batteryLevel(row.dev)
+        width: parent ? parent.width : 0
+        height: 26 * root.s
         Rectangle {
             anchors.fill: parent
             radius: 3 * root.s
-            color: cTap.pressed ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.16)
-                : (cHover.hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08) : "transparent")
-            border.width: Theme.borderWidth
-            border.color: chip.conn ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.4) : root.line
+            color: rTap.pressed ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.16)
+                : (rHover.hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08) : "transparent")
             Behavior on color { ColorAnimation { duration: Motion.fast } }
         }
-        Row {
-            id: chipRow
-            anchors.centerIn: parent
-            spacing: 5 * root.s
-            MaterialIcon {
-                anchors.verticalCenter: parent.verticalCenter
-                size: 13 * root.s
-                name: BtLink.glyphFor(chip.dev)
-                color: chip.conn ? root.ink : root.inkDim
-            }
-            Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: BtLink.label(chip.dev)
-                color: chip.conn ? root.ink : root.inkDim
-                font.family: Theme.fontPrimary
-                font.pixelSize: 11 * root.s
-                font.weight: chip.conn ? Font.DemiBold : Font.Normal
-                elide: Text.ElideRight
-                maximumLineCount: 1
-                width: Math.min(implicitWidth, 104 * root.s)
-            }
-            Rectangle {
-                anchors.verticalCenter: parent.verticalCenter
-                visible: chip.conn || chip.pend
-                width: 4 * root.s
-                height: width
-                radius: width / 2
-                color: root.ink
-                opacity: chip.pend ? 0.5 : 1
-                SequentialAnimation on opacity {
-                    running: chip.pend
-                    loops: Animation.Infinite
-                    NumberAnimation { from: 0.25; to: 0.9; duration: 600 }
-                    NumberAnimation { from: 0.9; to: 0.25; duration: 600 }
-                }
-            }
+        MaterialIcon {
+            id: rIcon
+            anchors.left: parent.left
+            anchors.leftMargin: 7 * root.s
+            anchors.verticalCenter: parent.verticalCenter
+            size: 14 * root.s
+            name: BtLink.glyphFor(row.dev)
+            color: row.conn ? Theme.primary : root.inkDim
         }
-        HoverHandler { id: cHover; cursorShape: Qt.PointingHandCursor }
-        MouseArea { id: cTap; anchors.fill: parent; onClicked: root.tapDevice(chip.dev) }
+        Text {
+            anchors.left: rIcon.right
+            anchors.leftMargin: 7 * root.s
+            anchors.right: rState.left
+            anchors.rightMargin: 6 * root.s
+            anchors.verticalCenter: parent.verticalCenter
+            text: BtLink.label(row.dev)
+            color: root.ink
+            font.family: Theme.fontPrimary
+            font.pixelSize: Theme.h5 * root.s
+            font.weight: row.conn ? Font.DemiBold : Font.Normal
+            elide: Text.ElideRight
+        }
+        Text {
+            id: rState
+            anchors.right: parent.right
+            anchors.rightMargin: 8 * root.s
+            anchors.verticalCenter: parent.verticalCenter
+            text: row.pend ? "…"
+                : row.conn ? (row.battery >= 0 ? row.battery + "%" : "Connected")
+                : row.fresh && rHover.hovered ? "Pair"
+                : ""
+            color: root.inkDim
+            font.family: Theme.fontPrimary
+            font.pixelSize: Theme.h6 * root.s
+        }
+        HoverHandler { id: rHover; cursorShape: Qt.PointingHandCursor }
+        MouseArea { id: rTap; anchors.fill: parent; onClicked: root.tapDevice(row.dev) }
     }
 
     // --- layout ---------------------------------------------------------------
@@ -235,7 +244,6 @@ Item {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 text: "BLUETOOTH"
-                color: root.inkDim
                 s: root.s
             }
             Row {
@@ -279,7 +287,7 @@ Item {
                 text: root.blocked ? "Bluetooth is blocked" : "Bluetooth is off"
                 color: root.ink
                 font.family: Theme.fontPrimary
-                font.pixelSize: 12 * root.s
+                font.pixelSize: Theme.h5 * root.s
                 font.weight: Font.DemiBold
             }
             PopoutAction {
@@ -315,32 +323,61 @@ Item {
             color: Theme.error
             wrapMode: Text.WordWrap
             font.family: Theme.fontPrimary
-            font.pixelSize: 10 * root.s
+            font.pixelSize: Theme.h6 * root.s
         }
 
-        // rail label, only when a hero already leads.
-        Text {
+        // your other paired devices.
+        Rectangle {
             width: parent.width
-            visible: root.adapterOn && root.focusDev !== null && root.railDevices.length > 0
-            text: root.discovering ? "OTHER · SCANNING" : "OTHER DEVICES"
-            color: root.inkDim
-            font.family: Theme.fontPrimary
-            font.pixelSize: 8.5 * root.s
-            font.letterSpacing: 1.5
+            height: 1
+            color: root.line
+            visible: root.adapterOn && root.focusDev !== null && root.railKnown.length > 0
         }
-
-        // DEVICE RAIL.
-        Flow {
+        Column {
             width: parent.width
-            spacing: 5 * root.s
-            visible: root.adapterOn && root.railDevices.length > 0
+            spacing: 2 * root.s
+            visible: root.adapterOn && root.railKnown.length > 0
             Repeater {
-                model: root.railDevices
-                delegate: DeviceChip {
+                model: root.railKnown
+                delegate: DeviceRow {
                     required property var modelData
                     dev: modelData
                 }
             }
+        }
+
+        // nearby devices while scanning.
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: root.line
+            visible: root.adapterOn && root.railFound.length > 0
+                && (root.focusDev !== null || root.railKnown.length > 0)
+        }
+        Column {
+            width: parent.width
+            spacing: 2 * root.s
+            visible: root.adapterOn && root.railFound.length > 0
+            Repeater {
+                model: root.shownFound
+                delegate: DeviceRow {
+                    required property var modelData
+                    dev: modelData
+                }
+            }
+        }
+        Text {
+            width: parent.width
+            visible: root.adapterOn && root.railFound.length > root.shortList
+            leftPadding: 7 * root.s
+            text: root.showAll ? "Fewer"
+                : "%1 more".arg(root.railFound.length - root.shortList)
+            color: moreHover.hovered ? root.ink : root.inkDim
+            font.family: Theme.fontPrimary
+            font.pixelSize: Theme.h6 * root.s
+            Behavior on color { ColorAnimation { duration: 120 } }
+            HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.showAll = !root.showAll }
         }
 
         // EMPTY plate.
@@ -363,7 +400,7 @@ Item {
                 text: root.discovering ? "Scanning…" : "No devices yet"
                 color: root.ink
                 font.family: Theme.fontPrimary
-                font.pixelSize: 12 * root.s
+                font.pixelSize: Theme.h5 * root.s
                 font.weight: Font.DemiBold
             }
             PopoutAction {

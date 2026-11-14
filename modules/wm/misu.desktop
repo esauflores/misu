@@ -1,6 +1,6 @@
 [Desktop Entry]
-Name=Misu (Scroll)
-Comment=Scroll desktop with the Misu shell
+Name=Misu
+Comment=Misu desktop
 Exec=@SESSION@
 Type=Application
-DesktopNames=scroll
+DesktopNames=wm

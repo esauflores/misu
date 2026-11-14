@@ -22,7 +22,7 @@ Item {
     signal committed(real v)
     signal iconTapped()
 
-    implicitHeight: 28 * s
+    implicitHeight: 24 * s
 
     readonly property bool active: lit && !muted
 
@@ -68,7 +68,7 @@ Item {
         color: (root.muted || !root.lit) ? Theme.inkOn(Theme.effectiveSurface, Theme.surfaceVariantText, 3.0) : Theme.inkOn(Theme.effectiveSurface, Theme.surfaceText)
         opacity: (root.lit || root.muted) ? 1 : 0.7
         font.family: Theme.fontPrimary
-        font.pixelSize: 9.5 * root.s
+        font.pixelSize: Theme.h6 * root.s
         font.weight: Font.DemiBold
         Behavior on opacity { NumberAnimation { duration: Motion.fast } }
     }

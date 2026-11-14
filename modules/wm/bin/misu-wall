@@ -10,7 +10,7 @@
 
 state=${XDG_STATE_HOME:-$HOME/.local/state}/rice
 walls=${RICE_WALLPAPERS:-$HOME/Pictures/Wallpapers}
-RICE_DEFAULT_WALL=${RICE_DEFAULT_WALL:-$HOME/Pictures/Wallpapers/black-hole.webp}
+RICE_DEFAULT_WALL=${RICE_DEFAULT_WALL:-$HOME/Pictures/Wallpapers/black-hole.png}
 mkdir -p "$state"
 
 images() { find "$walls" -maxdepth 1 -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) "$@"; }
@@ -21,19 +21,19 @@ apply() {
   [[ -f $img ]] || { echo "misu-wall: no such image: $1" >&2; exit 1; }
   printf '%s\n' "$img" >"$state/wallpaper"
 
-  pkill -x swaybg || true
-  setsid -f swaybg -m fill -i "$img" >/dev/null 2>&1
+  # An installer without a display seeds the palette and leaves live wallpaper alone.
+  if [[ -n ${WAYLAND_DISPLAY:-} ]]; then
+    pkill -x swaybg || true
+    setsid -f swaybg -m fill -i "$img" >/dev/null 2>&1
+  fi
 
   matugen image "$img" --mode dark --type "${RICE_SCHEME:-scheme-tonal-spot}" --source-color-index 0 >/dev/null
 
-  # Push the new border colors into the running scroll without a full reload
-  # (a reload would also restart Misu).
-  if [[ -n ${SWAYSOCK:-} && -f $state/scroll-colors.conf ]]; then
-    while IFS= read -r line; do
-      [[ $line == client.* ]] && scrollmsg -q -- "$line"
-    done <"$state/scroll-colors.conf"
+  # Refresh the runtime config; wm reload does not restart session processes.
+  if [[ -f ${XDG_CONFIG_HOME:-$HOME/.config}/wm/config.json ]]; then
+    "$(dirname -- "$(realpath -- "$0")")/misu-wm-config" >/dev/null
+    [[ -z ${WM_SOCK:-} ]] || wm msg reload
   fi
-  pkill -USR1 -x kitty || true
 }
 
 case ${1:-restore} in

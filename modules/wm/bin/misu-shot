@@ -1,22 +1,48 @@
 #!/usr/bin/env bash
-# misu-shot region|output: screenshot to ~/Pictures/Screenshots and the clipboard.
+# misu-shot region|output: screenshot with pointers to ~/Pictures/Screenshots and the clipboard.
+
+set -euo pipefail
 
 dir=$HOME/Pictures/Screenshots
-mkdir -p "$dir"
-file=$dir/"Screenshot from $(date '+%Y-%m-%d %H-%M-%S').png"
 
+# Set $file to a new name in $dir, numbered when this second's name is taken.
+new_file() {
+  local base n=1
+  mkdir -p "$dir"
+  base=$dir/"Screenshot from $(date '+%Y-%m-%d %H-%M-%S')"
+  file=$base.png
+  while [[ -e $file ]]; do
+    n=$((n + 1))
+    file="$base ($n).png"
+  done
+}
+
+die() {
+  echo "misu-shot: $*" >&2
+  exit 1
+}
+
+usage() {
+  echo "usage: misu-shot region|output" >&2
+  exit 2
+}
+
+# Screen shown to the user's seat, independent of agent focus.
+focused_output() {
+  wm msg tree | jq -r '.result | . as $tree | .seats[] | select(.id == 0) | .screen as $id | $tree.screens[] | select(.id == $id) | .name'
+}
+
+new_file
 case ${1:-region} in
   region)
     geom=$(slurp) || exit 0
-    grim -g "$geom" "$file"
+    grim -c -g "$geom" "$file"
     ;;
   output)
-    out=$(scrollmsg -t get_outputs | jq -r '.[] | select(.focused) | .name')
-    grim -o "$out" "$file"
+    grim -c -o "$(focused_output)" "$file"
     ;;
   *)
-    echo "usage: misu-shot region|output" >&2
-    exit 2
+    usage
     ;;
 esac
 

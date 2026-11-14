@@ -1,0 +1,109 @@
+{
+  "input": {
+    "keyboard": {
+      "layout": "us",
+      "repeat_rate": 25,
+      "repeat_delay": 600
+    },
+    "focus_follows_mouse": true,
+    "touchpad": {
+      "tap": true,
+      "natural_scroll": true,
+      "click_method": "clickfinger",
+      "drag": true,
+      "dwt": true
+    }
+  },
+  "colors": {
+    "seats": [
+      "#f2f2f2",
+      "#eb5c5c",
+      "#5cb8f2",
+      "#8cd973"
+    ],
+    "inactive": "#121318"
+  },
+  "bindings": {
+    "Mod+Return": "spawn foot",
+    "Mod+space": "spawn qs -c misu ipc call menu toggle launcher",
+    "Mod+w": "close",
+    "Mod+f": "fullscreen",
+    "Mod+Left": "focus left",
+    "Mod+Right": "focus right",
+    "Mod+Home": "focus first",
+    "Mod+End": "focus last",
+    "Mod+Shift+Left": "move left",
+    "Mod+Shift+Right": "move right",
+    "Mod+1": "workspace 1",
+    "Mod+2": "workspace 2",
+    "Mod+3": "workspace 3",
+    "Mod+4": "workspace 4",
+    "Mod+5": "workspace 5",
+    "Mod+6": "workspace 6",
+    "Mod+7": "workspace 7",
+    "Mod+8": "workspace 8",
+    "Mod+9": "workspace 9",
+    "Mod+Shift+1": "move-to-workspace 1 follow",
+    "Mod+Shift+2": "move-to-workspace 2 follow",
+    "Mod+Shift+3": "move-to-workspace 3 follow",
+    "Mod+Shift+4": "move-to-workspace 4 follow",
+    "Mod+Shift+5": "move-to-workspace 5 follow",
+    "Mod+Shift+6": "move-to-workspace 6 follow",
+    "Mod+Shift+7": "move-to-workspace 7 follow",
+    "Mod+Shift+8": "move-to-workspace 8 follow",
+    "Mod+Shift+9": "move-to-workspace 9 follow",
+    "Mod+Tab": null,
+    "Mod+Ctrl+Shift+r": "spawn misu-wm-config >/dev/null && wm msg reload",
+    "Mod+Shift+Return": "spawn foot -e herdr",
+    "Mod+Shift+e": "spawn nautilus",
+    "Mod+Shift+b": "spawn gtk-launch \"$(xdg-mime query default x-scheme-handler/https)\"",
+    "Mod+Shift+n": "spawn gtk-launch dev.zed.Zed",
+    "Mod+Shift+t": "spawn foot -e btop",
+    "Mod+p": "spawn hyprpicker -a",
+    "Mod+l": "spawn misu-lock",
+    "Mod+k": "spawn misu-keys",
+    "Mod+Shift+s": "spawn misu-shot region",
+    "Mod+Shift+z": "spawn command -v misu-dictate >/dev/null && misu-dictate",
+    "Mod+Escape": "spawn qs -c misu ipc call menu toggle session",
+    "Mod+Shift+v": "spawn qs -c misu ipc call menu toggle clipboard",
+    "Mod+Shift+q": "spawn qs -c misu ipc call menu toggle wallpaper",
+    "Print": "spawn misu-shot output",
+    "Alt+Tab": "focus previous",
+    "XF86AudioRaiseVolume": "spawn wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+",
+    "XF86AudioLowerVolume": "spawn wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-",
+    "XF86AudioMute": "spawn wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+    "XF86AudioMicMute": "spawn wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle",
+    "XF86AudioPlay": "spawn playerctl play-pause",
+    "XF86AudioNext": "spawn playerctl next",
+    "XF86AudioPrev": "spawn playerctl previous",
+    "XF86MonBrightnessUp": "spawn brightnessctl set 5%+ && qs -c misu ipc call osd brightness",
+    "XF86MonBrightnessDown": "spawn brightnessctl set 5%- && qs -c misu ipc call osd brightness"
+  },
+  "modifier": "super",
+  "seats": 2,
+  "startup": [
+    "dbus-update-activation-environment --systemd WM_SOCK WAYLAND_DISPLAY DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_DESKTOP XDG_SESSION_TYPE",
+    "misu-wall restore",
+    "qs -c misu",
+    "/usr/lib/polkit-gnome/polkit-gnome-authentication-agent-1",
+    "wl-paste --watch cliphist store",
+    "swayidle -w before-sleep 'misu-lock'"
+  ],
+  "screens": [
+    {
+      "match": "eDP-1",
+      "mode": "1366x768@60"
+    }
+  ],
+  "locked_bindings": [
+    "XF86AudioRaiseVolume",
+    "XF86AudioLowerVolume",
+    "XF86AudioMute",
+    "XF86AudioMicMute",
+    "XF86AudioPlay",
+    "XF86AudioNext",
+    "XF86AudioPrev",
+    "XF86MonBrightnessUp",
+    "XF86MonBrightnessDown"
+  ]
+}

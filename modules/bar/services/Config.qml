@@ -18,8 +18,8 @@ Singleton {
         size: 48,
         reveal: true,
         top: ["quick-settings", "workspaces"],
-        center: ["clock", "ai-usage"],
-        bottom: ["mpris", "tray", "notifications", "audio-output", "bluetooth", "network", "battery"]
+        center: ["clock", "ai-usage", "mpris", "dictate"],
+        bottom: ["tray", "notifications", "audio-output", "bluetooth", "network", "battery"]
     })
 
     property var user: ({})
@@ -49,7 +49,7 @@ Singleton {
 
     readonly property var rail: Object.assign({}, root.defaultRail, root.user.rail || ({}))
 
-    readonly property real fontScale: Math.max(0.7, Math.min(1.6, root.pick("fontScale", 1.3)))
+    readonly property real fontScale: Math.max(0.7, Math.min(1.6, root.pick("fontScale", 1.0)))
     readonly property string fontFamily: root.pick("fontFamily", "Space Grotesk")
     readonly property real frameThickness: root.pick("frameThickness", 2)
     readonly property real frameCorner: root.pick("frameCorner", 8)

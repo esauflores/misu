@@ -1,0 +1,260 @@
+#!/usr/bin/env -S uv run --quiet --script
+# /// script
+# requires-python = ">=3.11"
+# dependencies = ["numpy", "sherpa-onnx>=1.12"]
+# ///
+"""misu-dictate-server <state dir>: the transcriber behind misu-dictate.
+
+Uses Kroko's streaming models (through sherpa-onnx), one per language: English
+or Spanish, whichever misu-dictate wrote to `lang` in the state dir when the
+dictation started. A streaming model only works through the audio that's new,
+so it's light (~5% of the CPU) and the words it shows rarely change. Each is
+downloaded on first use to ~/.cache/misu-dictate and stays loaded. The models
+are Banafo's community Kroko models (CC-BY-SA, huggingface.co/Banafo/Kroko-ASR).
+It watches the state dir:
+
+- while `listening` exists, it feeds whatever audio.f32 has gained to the
+  model every fifth of a second and writes {"state": "listening", "lines":
+  [...]} to state.json: one line of at most 60 characters, like a
+  film's subtitles, filled word by word; when it's full the next word
+  starts a fresh page, and a long silence clears it. A word is frozen (it
+  won't change again) once it's held still for a second, or once it's 2.5 s
+  old anyway, or at a pause;
+- when `finish` appears, it takes the words after the last frozen one, writes
+  all of them to final.txt (misu-dictate saves it) and {"state": "done",
+  "text": ...}. The saved text is the text the subtitles showed.
+
+It stays up: misu-dictate starts it at login (`misu-dictate serve`) and again
+whenever it isn't running. Idle, it only checks the state dir.
+"""
+
+import json
+import os
+import sys
+import time
+from pathlib import Path
+
+RATE = 16000
+STEP = RATE // 5        # feed the model once another fifth of a second has arrived
+HOLD = 1.0              # a word unchanged since the last update is frozen once this old
+FREEZE = 2.5            # and any word is frozen once this old
+CLEAR = 4.0             # seconds without words before the page goes away
+LINE = 60               # characters per subtitle line
+LINES = 1               # lines per page
+THREADS = 2
+
+MODELS = {
+    "en": "sherpa-onnx-streaming-zipformer-en-kroko-2025-08-06",   # 70 MB
+    "es": "sherpa-onnx-streaming-zipformer-es-kroko-2025-08-06",   # 155 MB
+}
+RELEASES = "https://github.com/k2-fsa/sherpa-onnx/releases/download/asr-models"
+
+
+def pack(words: list[str]) -> list[list[str]]:
+    """Words into lines of at most LINE characters."""
+    lines: list[list[str]] = []
+    width = LINE + 1
+    for w in words:
+        if width + 1 + len(w) > LINE:
+            lines.append([])
+            width = -1
+        lines[-1].append(w)
+        width += 1 + len(w)
+    return lines
+
+
+def model_dir(name: str) -> Path:
+    """The model's folder in the cache, downloaded and unpacked on first use."""
+    import shutil
+    import tarfile
+    import tempfile
+    import urllib.request
+
+    cache = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "misu-dictate"
+    d = cache / name
+    if not (d / "tokens.txt").exists():
+        cache.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=cache) as tmp:
+            archive = Path(tmp) / "model.tar.bz2"
+            with urllib.request.urlopen(f"{RELEASES}/{name}.tar.bz2") as r, archive.open("wb") as f:
+                shutil.copyfileobj(r, f)
+            with tarfile.open(archive) as t:
+                t.extractall(tmp, filter="data")
+            shutil.rmtree(d, ignore_errors=True)
+            (Path(tmp) / name).rename(d)
+    return d
+
+
+def recognizer(lang: str):
+    import sherpa_onnx
+
+    d = model_dir(MODELS[lang])
+    # endpoints as in sherpa-onnx's example: 2.4 s of silence before anything
+    # is said, 1.2 s after something is, or 20 s of speech
+    return sherpa_onnx.OnlineRecognizer.from_transducer(
+        tokens=str(d / "tokens.txt"), encoder=str(d / "encoder.onnx"),
+        decoder=str(d / "decoder.onnx"), joiner=str(d / "joiner.onnx"),
+        num_threads=THREADS, sample_rate=RATE, feature_dim=80,
+        decoding_method="greedy_search", enable_endpoint_detection=True,
+        rule1_min_trailing_silence=2.4, rule2_min_trailing_silence=1.2,
+        rule3_min_utterance_length=20)
+
+
+def main() -> None:
+    import numpy as np
+
+    state = Path(sys.argv[1])
+    recognizers: dict = {}
+
+    def language() -> str:
+        try:
+            lang = (state / "lang").read_text().strip()
+        except OSError:
+            lang = ""
+        return lang if lang in MODELS else "en"
+
+    # ready-<lang>: that language's model is loaded, so misu-dictate can say
+    # listening straight away rather than loading
+    for f in state.glob("ready-*"):
+        f.unlink(missing_ok=True)
+
+    def get(lang: str):
+        if lang not in recognizers:
+            recognizers[lang] = recognizer(lang)
+            (state / f"ready-{lang}").touch()
+        return recognizers[lang]
+
+    get(language())     # loaded ahead, so later dictations start at once
+
+    def size() -> int:
+        """How many samples audio.f32 has."""
+        try:
+            return (state / "audio.f32").stat().st_size // 4
+        except OSError:
+            return 0
+
+    def samples_from(start: int):
+        """audio.f32 from sample `start` on: only what's new, so a long
+        dictation costs no more per update than a short one."""
+        try:
+            with (state / "audio.f32").open("rb") as f:
+                f.seek(start * 4)
+                raw = f.read()
+        except OSError:
+            raw = b""
+        return np.frombuffer(raw[: len(raw) // 4 * 4], dtype=np.float32)
+
+    def say(kind: str, text: str = "", lines: list[str] | None = None) -> None:
+        tmp = state / "state.json.tmp"
+        tmp.write_text(json.dumps({"state": kind, "text": text, "lines": lines or []}))
+        tmp.replace(state / "state.json")
+
+    # the first dictation started this server and shows "loading" until now
+    if (state / "listening").exists():
+        say("listening")
+
+    def same(a: str, b: str) -> bool:
+        key = lambda w: "".join(c for c in w.lower() if c.isalnum())
+        return key(a) == key(b)
+
+    def words_of(now: float) -> list[tuple]:
+        """The current utterance's words after the frozen ones: (word, start,
+        end), in seconds from the dictation's start. A word ends where the next
+        one starts (the model only gives starts)."""
+        r = rec.get_result_all(stream)
+        base = offset / RATE
+        words: list[list] = []
+        for tok, t in zip(r.tokens, r.timestamps):
+            if tok.startswith(" ") or not words:      # a new word
+                if words:
+                    words[-1][2] = base + t
+                words.append([tok.strip(), base + t, now])
+            else:                                      # the rest of it, or punctuation
+                words[-1][0] += tok
+        return [tuple(w) for w in words if any(c.isalnum() for c in w[0]) and w[1] > frozen + 0.01]
+
+    rec = stream = None
+    fed = 0          # samples given to the model
+    offset = 0       # where the model's current utterance starts, in samples
+    said: list[str] = []     # every frozen word, in order: the saved text
+    page = 0         # where in said (or after it) the subtitles' page starts
+    frozen = -1.0    # where the last frozen word starts, in seconds
+    heard = 0.0      # when a word was last heard, in seconds
+    prev: list[tuple] = []   # the last update's words after the frozen ones
+
+    def reset() -> None:
+        nonlocal rec, stream, fed, offset, said, page, frozen, heard, prev
+        rec = stream = None
+        fed = offset = page = 0
+        said, frozen, heard, prev = [], -1.0, 0.0, []
+
+    while True:
+        if (state / "finish").exists():
+            say("finishing")
+            text = ""
+            if stream is not None:
+                rest = samples_from(fed)
+                stream.accept_waveform(RATE, np.concatenate(
+                    [rest, np.zeros(int(0.7 * RATE), np.float32)]))
+                stream.input_finished()
+                while rec.is_ready(stream):
+                    rec.decode_stream(stream)
+                said += [w for w, _, _ in words_of((fed + len(rest)) / RATE)]
+                text = " ".join(said)
+            (state / "final.txt").write_text(text)
+            (state / "finish").unlink(missing_ok=True)
+            say("done", text)
+            reset()
+
+        elif (state / "listening").exists():
+            if size() < fed:                   # a new dictation
+                reset()
+            if stream is None:
+                if language() not in recognizers:   # another language's model
+                    say("loading")
+                    get(language())
+                    say("listening")
+                rec = get(language())
+                stream = rec.create_stream()
+            if size() - fed >= STEP:
+                new = samples_from(fed)
+                stream.accept_waveform(RATE, new)
+                fed += len(new)
+                while rec.is_ready(stream):
+                    rec.decode_stream(stream)
+                now = fed / RATE
+                hyp = words_of(now)
+                # freeze the words that held still since the last update once
+                # they're HOLD old, and any word once it's FREEZE old
+                n = 0
+                while n < len(hyp) and (hyp[n][2] < now - FREEZE or (
+                        hyp[n][2] < now - HOLD and n < len(prev) and same(hyp[n][0], prev[n][0]))):
+                    n += 1
+                if rec.is_endpoint(stream):    # a pause: all of it is final
+                    n = len(hyp)
+                    rec.reset(stream)
+                    offset = fed
+                if n:
+                    said += [w for w, _, _ in hyp[:n]]
+                    frozen = hyp[n - 1][1]
+                hyp = prev = hyp[n:]
+                if hyp or n:
+                    heard = now
+                if not hyp and now - heard > CLEAR:
+                    page = len(said)             # silence: a blank page
+                words = (said + [w for w, _, _ in hyp])[page:]
+                lines = pack(words)
+                if len(lines) > LINES:           # full: a fresh page, which starts
+                    # at a frozen word (later ones may still change)
+                    page = max(page, min(page + sum(len(l) for l in lines[:LINES]), len(said)))
+                    lines = pack((said + [w for w, _, _ in hyp])[page:])[-LINES:]
+                if (state / "listening").exists():  # not stopped meanwhile
+                    say("listening", lines=[" ".join(l) for l in lines])
+            time.sleep(0.05)
+
+        else:
+            time.sleep(0.15)
+
+
+if __name__ == "__main__":
+    main()

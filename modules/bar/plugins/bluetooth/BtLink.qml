@@ -77,12 +77,15 @@ Singleton {
         return h + "h " + (m % 60) + "m";
     }
 
-    // Pair (if needed), trust and connect, with one retry; the last line of
-    // output on failure is shown to the user.
+    // Pair (unless a key is stored), trust and connect, with one retry; the
+    // last line of output on failure is shown to the user. Bonded, not Paired:
+    // a device can connect unbonded, and then every connect would pair again
+    // (20 s lost when it isn't in pairing mode). Bonding needs base's
+    // AlwaysPairable, as no agent runs.
     function linkCommand(addr) {
         const a = String(addr).replace(/[^0-9A-Fa-f:]/g, "");
         return ["sh", "-c",
-            "a=" + a + "; bluetoothctl info $a | grep -q 'Paired: yes' || bluetoothctl --timeout 20 pair $a >/dev/null;"
+            "a=" + a + "; bluetoothctl info $a | grep -q 'Bonded: yes' || bluetoothctl --timeout 20 pair $a >/dev/null;"
             + " bluetoothctl trust $a >/dev/null;"
             + " bluetoothctl --timeout 15 connect $a | grep -q 'successful' || { sleep 2; bluetoothctl --timeout 15 connect $a | tail -n1; bluetoothctl info $a | grep -q 'Connected: yes'; }"];
     }

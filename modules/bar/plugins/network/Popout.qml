@@ -7,11 +7,13 @@ import qs.services
 
 // Network popout: a frame-edge card (shared PopoutCard, so it opens and melts
 // like the music card) leading with the current link (wired or the joined
-// Wi-Fi), then the available networks as compact rows -- tap an open or saved
+// Wi-Fi, tap to disconnect), then the strongest networks as flat rows (all of
+// them behind "N more") -- tap an open or saved
 // one to join, or expand a secured one for its password. Wi-Fi power and scan
 // ride the head. All live off the daemon `network` topic via the Network
-// singleton; the surface takes on-demand keyboard only while a password field
-// is focused, and dismisses on an outside click.
+// singleton; the surface takes the keyboard only while a password or hidden-
+// network field is open (`wantsKeyboard`; any other click leaves the window's
+// focus alone), and dismisses on an outside click.
 Item {
     id: root
 
@@ -27,6 +29,11 @@ Item {
     property bool hiddenConnecting: false
     property bool hiddenError: false
 
+    // password rows expanded; with the hidden-network card, what makes the
+    // surface take the keyboard (CardManager reads wantsKeyboard).
+    property int pwRowsOpen: 0
+    readonly property bool wantsKeyboard: root.open && (root.hiddenOpen || root.pwRowsOpen > 0)
+
     function openHidden() {
         root.hiddenOpen = true;
         root.hiddenError = false;
@@ -39,6 +46,7 @@ Item {
         root.hiddenSsid = "";
         root.hiddenPassword = "";
         root.hiddenError = false;
+        hiddenEye.show = false;
     }
     function submitHidden() {
         if (root.hiddenSsid === "" || root.hiddenConnecting)
@@ -132,21 +140,37 @@ Item {
 
     function secured(ap) { return ap && ap.security && ap.security !== "None"; }
 
+    // signal as bars, the same steps as the rail icon.
+    function bars(strength) {
+        const s = strength || 0;
+        return s > 75 ? "network_wifi" : s > 50 ? "network_wifi_3_bar"
+            : s > 25 ? "network_wifi_2_bar" : s > 0 ? "network_wifi_1_bar" : "signal_wifi_0_bar";
+    }
+
+    // the list shows the strongest few until "N more" is tapped; it folds back
+    // each time the card closes.
+    readonly property int shortList: 6
+    property bool showAll: false
+    readonly property var shownNets: root.showAll ? root.availableNets
+        : root.availableNets.slice(0, root.shortList)
+
     // misu: the list opens on the last scan's results and the rescan starts once
     // the card has finished revealing, so fresh results never re-sort the list
     // mid-slide.
     onOpenChanged: {
-        Network.setVpnPolling(root, root.open);
         if (root.open) {
+            Network.refreshState();
             openScan.restart();
         } else {
             openScan.stop();
+            root.showAll = false;
             root.scanning = false;
             scanClear.stop();
+            if (!root.hiddenConnecting)
+                root.cancelHidden();
         }
     }
     Timer { id: openScan; interval: Motion.dur(150) + 50; onTriggered: root.scan() }
-    Component.onDestruction: Network.setVpnPolling(root, false)
 
     Timer { id: rescan; interval: 30000; repeat: true; running: root.open && root.wifiOn; onTriggered: Network.refresh() }
     Timer { id: scanClear; interval: 15000; onTriggered: root.scanning = false }
@@ -180,10 +204,24 @@ Item {
         width: parent ? parent.width : 0
         spacing: 4 * root.s
 
+        onExpandedChanged: root.pwRowsOpen += apr.expanded ? 1 : -1
+        Component.onDestruction: if (apr.expanded) root.pwRowsOpen -= 1
+        // closing the card folds an idle password row, so reopening it does
+        // not take the keyboard.
+        Connections {
+            target: root
+            function onOpenChanged() {
+                if (!root.open && !apr.connecting) {
+                    apr.expanded = false;
+                    pwField.text = "";
+                }
+            }
+        }
+
         function doConnect() {
             apr.errorShown = false;
             apr.connecting = true;
-            apr.pendingId = Network.connectWifi(apr.ap.ssid, apr.needsPw ? pwField.text : "", apr.ap.bssid);
+            apr.pendingId = Network.connectWifi(apr.ap.ssid, apr.needsPw ? pwField.text : "", apr.ap.bssid, false, apr.ap.profileUuid);
         }
         Connections {
             target: Network
@@ -210,8 +248,6 @@ Item {
                 radius: 3 * root.s
                 color: apTap.pressed ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.16)
                     : (apHover.hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08) : "transparent")
-                border.width: Theme.borderWidth
-                border.color: root.line
                 Behavior on color { ColorAnimation { duration: Motion.fast } }
             }
             MaterialIcon {
@@ -220,9 +256,8 @@ Item {
                 anchors.leftMargin: 7 * root.s
                 anchors.verticalCenter: parent.verticalCenter
                 size: 14 * root.s
-                name: "wifi"
+                name: root.bars(apr.ap.strength)
                 color: root.inkDim
-                opacity: 0.4 + 0.6 * Math.max(0, Math.min(1, (apr.ap.strength || 0) / 100))
             }
             Text {
                 anchors.left: apIcon.right
@@ -233,7 +268,7 @@ Item {
                 text: apr.ap.ssid
                 color: root.ink
                 font.family: Theme.fontPrimary
-                font.pixelSize: 11 * root.s
+                font.pixelSize: Theme.h5 * root.s
                 elide: Text.ElideRight
             }
             Row {
@@ -248,7 +283,7 @@ Item {
                     text: apr.ap.band || ""
                     color: root.inkDim
                     font.family: Theme.fontPrimary
-                    font.pixelSize: 9.5 * root.s
+                    font.pixelSize: Theme.h6 * root.s
                 }
                 MaterialIcon {
                     visible: apr.sec
@@ -258,11 +293,12 @@ Item {
                     color: root.inkDim
                 }
                 Text {
+                    visible: apr.connecting
                     anchors.verticalCenter: parent.verticalCenter
-                    text: apr.connecting ? "…" : Math.round(apr.ap.strength || 0) + "%"
+                    text: "…"
                     color: root.inkDim
                     font.family: Theme.fontPrimary
-                    font.pixelSize: 9.5 * root.s
+                    font.pixelSize: Theme.h6 * root.s
                 }
             }
             HoverHandler { id: apHover; cursorShape: Qt.PointingHandCursor }
@@ -303,7 +339,7 @@ Item {
                     anchors.verticalCenter: parent.verticalCenter
                     color: root.ink
                     font.family: Theme.fontPrimary
-                    font.pixelSize: 11 * root.s
+                    font.pixelSize: Theme.h5 * root.s
                     echoMode: eye.show ? TextInput.Normal : TextInput.Password
                     clip: true
                     onAccepted: apr.doConnect()
@@ -323,8 +359,9 @@ Item {
                     anchors.rightMargin: 7 * root.s
                     anchors.verticalCenter: parent.verticalCenter
                     size: 13 * root.s
-                    name: eye.show ? "close" : "info"
+                    name: eye.show ? "visibility_off" : "visibility"
                     color: root.inkDim
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
                     TapHandler { onTapped: eye.show = !eye.show }
                 }
             }
@@ -335,7 +372,7 @@ Item {
                 color: Theme.error
                 wrapMode: Text.WordWrap
                 font.family: Theme.fontPrimary
-                font.pixelSize: 9.5 * root.s
+                font.pixelSize: Theme.h6 * root.s
             }
             PopoutAction {
                 width: parent.width
@@ -363,7 +400,6 @@ Item {
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 text: "NETWORK"
-                color: root.inkDim
                 s: root.s
             }
             Row {
@@ -407,7 +443,7 @@ Item {
                 text: "Wi-Fi is off"
                 color: root.ink
                 font.family: Theme.fontPrimary
-                font.pixelSize: 12 * root.s
+                font.pixelSize: Theme.h5 * root.s
                 font.weight: Font.DemiBold
             }
             PopoutAction {
@@ -418,91 +454,79 @@ Item {
             }
         }
 
-        // HERO: the current link.
+        // the current link, styled like the rows below: wired, the joined
+        // Wi-Fi (tap to disconnect), or a join in progress.
         Item {
+            id: current
+            readonly property bool connecting: !root.wiredUp && !root.wifiUp
+                && Network.wifiConnectivity === "Connecting"
             width: parent.width
-            height: 36 * root.s
-            visible: root.anyLink
+            height: 26 * root.s
+            visible: root.wiredUp || root.wifiUp || current.connecting
             Rectangle {
-                id: netTile
+                anchors.fill: parent
+                radius: 3 * root.s
+                color: curTap.pressed ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.16)
+                    : (curHover.hovered ? Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.08) : "transparent")
+                Behavior on color { ColorAnimation { duration: Motion.fast } }
+            }
+            MaterialIcon {
+                id: curIcon
                 anchors.left: parent.left
+                anchors.leftMargin: 7 * root.s
                 anchors.verticalCenter: parent.verticalCenter
-                width: 30 * root.s
-                height: width
-                radius: 4 * root.s
-                color: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.05)
-                border.width: Theme.borderWidth
-                border.color: root.line
-                MaterialIcon {
-                    anchors.centerIn: parent
-                    size: 16 * root.s
-                    name: root.wiredUp ? "lan" : "wifi"
-                    color: (root.wiredUp || root.wifiUp) ? root.ink : root.inkDim
-                }
+                size: 14 * root.s
+                name: root.wiredUp ? "lan" : root.bars(Network.wifi.strength)
+                color: Theme.primary
             }
-            PopoutAction {
-                id: disc
+            Text {
+                anchors.left: curIcon.right
+                anchors.leftMargin: 7 * root.s
+                anchors.right: curState.left
+                anchors.rightMargin: 6 * root.s
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.wiredUp ? "Wired" : root.wifiUp ? root.activeSsid : "Joining…"
+                color: root.ink
+                font.family: Theme.fontPrimary
+                font.pixelSize: Theme.h5 * root.s
+                font.weight: Font.DemiBold
+                elide: Text.ElideRight
+            }
+            Text {
+                id: curState
                 anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                visible: root.wifiUp
-                s: root.s
-                destructive: true
-                label: "Disconnect"
-                onClicked: Network.disconnectWifi()
-            }
-            Column {
-                anchors.left: netTile.right
-                anchors.leftMargin: 9 * root.s
-                anchors.right: disc.visible ? disc.left : parent.right
                 anchors.rightMargin: 8 * root.s
                 anchors.verticalCenter: parent.verticalCenter
-                spacing: 1 * root.s
-                Text {
-                    width: parent.width
-                    text: root.wiredUp ? "Wired"
-                        : root.wifiUp ? root.activeSsid
-                        : "Not connected"
-                    color: root.ink
-                    font.family: Theme.fontPrimary
-                    font.pixelSize: 12.5 * root.s
-                    font.weight: Font.DemiBold
-                    elide: Text.ElideRight
-                }
-                Text {
-                    width: parent.width
-                    text: {
-                        if (root.wiredUp) return "Connected";
-                        if (root.wifiUp) {
-                            const s = Math.round(Network.wifi.strength || 0);
-                            const base = "Connected · %1%".arg(s);
-                            return Network.vpnActive ? base + " · " + Network.vpnName : base;
-                        }
-                        return Network.wifiConnectivity === "Connecting" ? "Connecting…" : "Choose a network";
-                    }
-                    color: root.inkDim
-                    font.family: Theme.fontPrimary
-                    font.pixelSize: 9 * root.s
-                    elide: Text.ElideRight
-                }
+                text: root.wifiUp && curHover.hovered ? "Disconnect"
+                    : current.connecting ? ""
+                    : Network.vpnActive ? "VPN · " + Network.vpnName
+                    : "Connected"
+                color: root.wifiUp && curHover.hovered ? Theme.error : root.inkDim
+                font.family: Theme.fontPrimary
+                font.pixelSize: Theme.h6 * root.s
+            }
+            HoverHandler { id: curHover; cursorShape: root.wifiUp ? Qt.PointingHandCursor : Qt.ArrowCursor }
+            MouseArea {
+                id: curTap
+                anchors.fill: parent
+                enabled: root.wifiUp
+                onClicked: Network.disconnectWifi()
             }
         }
-
-        // available networks.
-        Text {
+        Rectangle {
             width: parent.width
-            visible: root.wifiOn
-            text: root.scanning ? "NETWORKS · SCANNING" : "NETWORKS"
-            color: root.inkDim
-            font.family: Theme.fontPrimary
-            font.pixelSize: 8.5 * root.s
-            font.letterSpacing: 1.5
+            height: 1
+            color: root.line
+            visible: current.visible && root.wifiOn
         }
+
+        // available networks, the strongest first.
         Column {
             width: parent.width
-            spacing: 5 * root.s
+            spacing: 2 * root.s
             visible: root.wifiOn
             Repeater {
-                model: root.availableNets
+                model: root.shownNets
                 delegate: ApRow {
                     required property var modelData
                     ap: modelData
@@ -511,25 +535,43 @@ Item {
         }
         Text {
             width: parent.width
+            visible: root.wifiOn && root.availableNets.length > root.shortList
+            leftPadding: 7 * root.s
+            text: root.showAll ? "Fewer"
+                : "%1 more".arg(root.availableNets.length - root.shortList)
+            color: moreHover.hovered ? root.ink : root.inkDim
+            font.family: Theme.fontPrimary
+            font.pixelSize: Theme.h6 * root.s
+            Behavior on color { ColorAnimation { duration: 120 } }
+            HoverHandler { id: moreHover; cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: root.showAll = !root.showAll }
+        }
+        Text {
+            width: parent.width
             visible: root.wifiOn && root.availableNets.length === 0
             horizontalAlignment: Text.AlignHCenter
             text: root.scanning ? "Scanning…" : "No networks found"
             color: root.inkDim
             font.family: Theme.fontPrimary
-            font.pixelSize: 10 * root.s
+            font.pixelSize: Theme.h6 * root.s
             topPadding: 2 * root.s
+        }
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: root.line
+            visible: root.wifiOn
         }
         Text {
             width: parent.width
             visible: root.wifiOn && !root.hiddenOpen
-            horizontalAlignment: Text.AlignHCenter
-            topPadding: 4 * root.s
-            text: "Connect to a hidden network"
+            leftPadding: 7 * root.s
+            text: "Hidden network…"
             color: hiddenLinkHover.hovered ? root.ink : root.inkDim
             font.family: Theme.fontPrimary
-            font.pixelSize: 10 * root.s
+            font.pixelSize: Theme.h6 * root.s
             Behavior on color { ColorAnimation { duration: 120 } }
-            HoverHandler { id: hiddenLinkHover }
+            HoverHandler { id: hiddenLinkHover; cursorShape: Qt.PointingHandCursor }
             TapHandler { onTapped: root.openHidden() }
         }
         Column {
@@ -546,16 +588,19 @@ Item {
                 border.color: root.line
                 TextInput {
                     id: hiddenSsidField
+                    KeyNavigation.tab: hiddenPwField
+                    KeyNavigation.backtab: hiddenPwField
                     anchors.fill: parent
                     anchors.leftMargin: 8 * root.s
                     anchors.rightMargin: 8 * root.s
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.ink
                     font.family: Theme.fontPrimary
-                    font.pixelSize: 11 * root.s
+                    font.pixelSize: Theme.h5 * root.s
                     clip: true
                     text: root.hiddenSsid
                     onTextChanged: { root.hiddenSsid = text; root.hiddenError = false; }
+                    onAccepted: hiddenPwField.forceActiveFocus()
                     Keys.onPressed: function(event) { if (event.key === Qt.Key_Escape) { root.cancelHidden(); event.accepted = true; } }
                     Text {
                         anchors.fill: parent
@@ -575,14 +620,20 @@ Item {
                 border.width: Theme.borderWidth
                 border.color: root.line
                 TextInput {
-                    anchors.fill: parent
+                    id: hiddenPwField
+                    KeyNavigation.tab: hiddenSsidField
+                    KeyNavigation.backtab: hiddenSsidField
+                    anchors.left: parent.left
+                    anchors.right: hiddenEye.left
+                    anchors.top: parent.top
+                    anchors.bottom: parent.bottom
                     anchors.leftMargin: 8 * root.s
-                    anchors.rightMargin: 8 * root.s
+                    anchors.rightMargin: 4 * root.s
                     verticalAlignment: TextInput.AlignVCenter
                     color: root.ink
                     font.family: Theme.fontPrimary
-                    font.pixelSize: 11 * root.s
-                    echoMode: TextInput.Password
+                    font.pixelSize: Theme.h5 * root.s
+                    echoMode: hiddenEye.show ? TextInput.Normal : TextInput.Password
                     clip: true
                     text: root.hiddenPassword
                     onTextChanged: { root.hiddenPassword = text; root.hiddenError = false; }
@@ -597,6 +648,18 @@ Item {
                         visible: parent.text.length === 0 && !parent.activeFocus
                     }
                 }
+                MaterialIcon {
+                    id: hiddenEye
+                    property bool show: false
+                    anchors.right: parent.right
+                    anchors.rightMargin: 7 * root.s
+                    anchors.verticalCenter: parent.verticalCenter
+                    size: 13 * root.s
+                    name: hiddenEye.show ? "visibility_off" : "visibility"
+                    color: root.inkDim
+                    HoverHandler { cursorShape: Qt.PointingHandCursor }
+                    TapHandler { onTapped: hiddenEye.show = !hiddenEye.show }
+                }
             }
             Text {
                 width: parent.width
@@ -605,7 +668,7 @@ Item {
                 color: Theme.error
                 wrapMode: Text.WordWrap
                 font.family: Theme.fontPrimary
-                font.pixelSize: 9.5 * root.s
+                font.pixelSize: Theme.h6 * root.s
             }
             PopoutAction {
                 width: parent.width

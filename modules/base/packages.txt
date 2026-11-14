@@ -5,10 +5,13 @@ jq
 yay
 # Network, Bluetooth, power, audio
 networkmanager
+iwd
 bluez
 bluez-utils
 upower
 power-profiles-daemon
+# powerprofilesctl (the bar's power profiles) needs python-gobject
+python-gobject
 pipewire
 pipewire-alsa
 pipewire-pulse

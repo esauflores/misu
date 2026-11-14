@@ -1,8 +1,13 @@
-#!/usr/bin/env bash
-# misu-keys: pick a bind from rebinds.conf with fuzzel and run it.
-
-choice=$(sed -n 's/^bindsym \(--[a-z-]* \)*\([^ ]*\) \(.*\)$/\2\t\3/p' \
-  "${XDG_CONFIG_HOME:-$HOME/.config}/scroll/config.d/rebinds.conf" | sed 's/[$]mod/Super/' | column -t -s $'\t' | fuzzel --dmenu --width 90 --prompt 'keys  ') || exit 0
-
-read -r _ cmd <<<"$choice"
-[[ -n $cmd ]] && scrollmsg -q -- "$cmd"
+#!/usr/bin/env python3
+"""Pick a configured wm binding with fuzzel and run it through IPC."""
+import json
+import os
+from pathlib import Path
+import subprocess
+config = json.loads((Path(os.environ.get('XDG_CONFIG_HOME', Path.home() / '.config')) / 'wm/config.json').read_text())
+choices = {key.replace('Mod+', 'Super+') + '  ' + cmd: cmd
+           for key, cmd in config['bindings'].items() if cmd}
+menu = subprocess.run(['fuzzel', '--dmenu', '--width', '90', '--prompt', 'keys  '],
+                      input='\n'.join(choices), text=True, capture_output=True)
+if menu.returncode == 0 and menu.stdout.strip() in choices:
+    raise SystemExit(subprocess.run(['wm', 'msg', 'seat', '0', choices[menu.stdout.strip()]]).returncode)

@@ -82,7 +82,7 @@ PanelWindow {
                     ? "OFF" : Math.round(Feedback.level * 100) + "%"
                 color: Theme.surfaceText
                 font.family: Theme.fontPrimary
-                font.pixelSize: 9
+                font.pixelSize: Theme.h6
             }
         }
     }

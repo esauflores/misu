@@ -14,8 +14,13 @@ import "../plugins/bluetooth" as PluginBluetooth
 import "../plugins/calendar" as PluginCalendar
 import "../plugins/aiusage" as PluginAiUsage
 import "../plugins/mpris" as PluginMpris
+import "../plugins/dictate" as PluginDictate
 import "../plugins/network" as PluginNetwork
 import "../plugins/notifications" as PluginNotifications
+import "../plugins/launcher" as PluginLauncher
+import "../plugins/clipboard" as PluginClipboard
+import "../plugins/wallpaper" as PluginWallpaper
+import "../plugins/session" as PluginSession
 import "../plugins/share" as PluginShare
 
 // One rail card: plugins/<kind>/Popout.qml riding the shared Popout, sliding
@@ -37,6 +42,8 @@ Popout {
     readonly property string kind: record ? record.kind : ""
     // stays true through the close slide so the body tears down only once flush.
     readonly property bool effectiveOpen: menuOpen || prog > 0.004
+    // the body asks for the keyboard (a text field open in it).
+    readonly property bool wantsKeyboard: !!(body.item && body.item.wantsKeyboard)
 
     edge: anchor
     align: "center"
@@ -78,9 +85,16 @@ Popout {
     // The card's own skin scrolls with its content; a plain clip (no texture, so
     // text stays sharp) cuts it only when it overflows, and the outline below
     // redraws the edges the clip cuts off.
+    //
+    // The content (the card's skin with it) is placed where the card ends up:
+    // a card resizing in place (a list expanding) is moved by its animated
+    // height, so laid from its live top a card pinned to the screen's bottom
+    // would first grow down past the edge, then slide back up.
     Item {
         width: root.openW
         height: root.openH
+        y: root.vertical && !root.overflows
+            ? root.alignPos(root.height, root.contentH) - root.alignPos(root.height, root.openH) : 0
         clip: root.overflows
 
         Flickable {

@@ -56,7 +56,8 @@ top-level script when run directly.
 6. List it in `AGENTS.md` (Layout) and `README.md` (Layout).
 7. Check: `./install.sh --dry-run <name>` and
    `./uninstall.sh --dry-run --packages <name>`, then `bash -n` on both scripts.
-   Test for real in the VM (see the `test-in-vm` skill), never on the host.
+   Then test for real: ask the user whether in the VM (see the `test-in-vm`
+   skill) or on the host.
 
 ## Helpers
 
@@ -79,7 +80,7 @@ Variables: `$ROOT` (checkout), `$M` (`$ROOT/modules`), `$home`, `$target_user`,
 - Idempotent: re-running must be safe. `install -D`, `ln -sfn`, `--needed`,
   and guard one-time steps (see how `greeter` backs up `config.toml` once).
 - Anything that writes outside `run`/`as_user`/`link` must check `$DRY_RUN`
-  itself (see the `wm` desktop entry and the `apps` VS Code merge).
+  itself (see the `wm` desktop entry and the `apps` btop settings).
 - Prefer linking user config into the checkout so edits are live; copy only
   root-owned files (`/etc`, `/usr/share`, `/opt`).
 - Uninstall never touches user data and only removes links it owns.

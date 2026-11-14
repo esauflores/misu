@@ -1,6 +1,6 @@
 # Agent notes
 
-Misu, an Arch Linux rice: scroll (sway-scroll) compositor, Quickshell bar, matugen
+Misu, an Arch Linux rice: wm compositor, Quickshell bar, matugen
 palette. The checkout lives at `/opt/misu` (`install.sh` refuses to run from
 elsewhere; `--dry-run` only warns) and `install.sh` symlinks config from it into
 `$HOME`, so edits under `modules/` are live wherever it is installed.
@@ -16,7 +16,7 @@ top-level `install.sh`, which holds the helpers (`run`, `as_user`, `link`,
 the modules in order; a module script run directly delegates to it.
 
 ```sh
-sudo ./install.sh                        # every module
+sudo ./install.sh                        # every module but the optional ones (dictate)
 sudo ./install.sh bar theme              # just these
 sudo modules/bar/install.sh              # same as ./install.sh bar
 sudo ./uninstall.sh [--packages] [mod]   # --packages also removes their packages
@@ -36,18 +36,50 @@ sudo ./uninstall.sh [--packages] [mod]   # --packages also removes their package
 - `greeter`: a Quickshell login screen (username and password) under Cage on
   greetd. Uses `bar`'s Space Grotesk font and `theme`'s wallpaper; it starts
   `wm/bin/misu-session` straight from the checkout.
-- `wm`: scroll config, fuzzel, the session entry, and the `misu-*` commands
-  in `bin/` (linked into `~/.local/bin`). `focus_wrapping stay` and the
-  `[con_id=__focused__]` on Super+arrows stop focus at the workspace's last
-  window, so those keys never cross to any other output.
-- `bar`: the Quickshell bar (config name `misu`). `plugins/aiusage` polls the
-  `ai-usagebar` CLI for Claude and Codex usage; `plugins/share` asks what to
-  share on a screen share, for `wm`'s `misu-share-pick`, the portal's chooser
-  (`wm/xdpw.conf`), which falls back to fuzzel where the card can't show.
+- `wm`: builds the Rust compositor in `wm/` with cargo, installs it at
+  `/usr/local/bin/wm`, and links `modules/wm/config.json` into `~/.config/wm/`.
+  The Misu session runs `wm --backend drm`. Startup exports `WM_SOCK`,
+  `WAYLAND_DISPLAY` and `DISPLAY` to D-Bus/systemd, restores the wallpaper,
+  and starts the bar, polkit, cliphist and swayidle (lock before sleep).
+  `misu-wm-config` merges the tracked config with matugen's `wm-colors.json`
+  into `~/.local/state/rice/wm-config.json`; the session reads that file.
+  Super+Ctrl+Shift+R regenerates it and reloads wm. Nightlight is disabled
+  until wm supports gamma control. Unsupported layout bindings are omitted.
+  fuzzel, the session entry and `misu-*` commands live here too.
+  Seats are independent users, with their own pointer, keyboard focus,
+  workspace, view and animations. Seat 0 is the user; agent commands default
+  to seat 1 (`MISU_AGENT_SEAT`). An app sees only the `wl_seat` of the seat that launched
+  it (apps no seat launched see all), so one-seat apps (Zed, Electron) work on
+  either seat, and seats never drive each other's apps. xdg-foreign puts a
+  portal's dialog over the window that asked for it. `misu-ai-app open <command>`, `misu-ai-shot`,
+  `misu-ai-pointer` and `misu-ai-workspace <1-9>` wrap `wm msg seat N`.
+  `skills/misu-agent-seat` teaches GUI agents to use them; it is linked into
+  `~/.agents/skills`, `~/.claude/skills` and `~/.codex/skills`.
+  No virtual-output workspace, uinput device or separate pointer overlay.
+- `bar`: the Quickshell bar (config name `misu`). `services/Wm.qml` follows
+  `wm msg subscribe`; workspace actions target seat 0. `plugins/aiusage`
+  polls the `ai-usagebar` CLI for Claude and Codex usage; `plugins/dictate`
+  drives `misu-dictate` and shows its subtitles; `plugins/share` asks what
+  to share for `wm`'s `misu-share-pick`, the portal's chooser (`wm/xdpw.conf`),
+  with fuzzel as a fallback. The wm module uses the upstream
+  `xdg-desktop-portal-wlr-git` package for the initial capture-frame fix missing
+  from extra's 0.8.4 build.
 - `theme`: matugen config and templates, wallpapers, GTK/Qt/cursor settings
-- `shell`: zsh, kitty, starship
-- `apps`: herdr, mimeapps, Zen defaults (all profiles), VS Code defaults, AI
-  CLIs
+- `shell`: zsh, foot, starship
+- `dictate` (optional: not installed unless named, `sudo ./install.sh
+  dictate`; a plain uninstall still includes it): `misu-dictate`
+  (Super+Shift+Z, guarded by command availability in wm/config.json) shows
+  live subtitles of speech (the mic, computer audio or both, and English or
+  Spanish, picked in the bar) and saves the text to `~/Documents/Dictations`,
+  with `misu-dictate-server` (started by the first dictation, which shows
+  "Loading…" meanwhile, then kept up; run through `uv` from `apps`' mise)
+  keeping Kroko's streaming models (via sherpa-onnx) loaded; the saved text is
+  what the subtitles showed. `bar`'s `plugins/dictate` shows its rail button
+  only while `misu-dictate` is on PATH.
+- `apps`: herdr, mimeapps, Brave Origin (0.9 scale, policies in
+  `/etc/brave/policies/managed`: no password manager, forced extensions; it
+  replaced Zen), Zed (replaced VS Code; on Wayland, 0.9 font sizes, defaults merged into
+  its settings, matugen theme `Misu`), AI CLIs and the Archify skill (diagrams and explainers) for Claude Code and Codex
 
 When you add a package or an installed file, put it in its module's
 `packages.txt` or `install.sh`, undo it in `uninstall.sh`, and check both with
@@ -60,13 +92,16 @@ When you add a package or an installed file, put it in its module's
 
 ## Rules
 
-- Don't run `sudo ./install.sh` or `./uninstall.sh` on the host. The host is the user's daily machine.
-  Test in the VM.
+- VM testing is optional: before testing a change, ask the user whether they
+  want it tested in the VM (see `test-in-vm`) or on the host, their laptop.
+  On the host, check with `--dry-run` first, apply only what changed (the files
+  or the one step, e.g. installing one policy file) rather than a whole module, and
+  get root through `pkexec` (sudo needs a terminal password).
 - Never commit or push until the user has verified the change and asked for it,
   every time. Earlier permission does not carry over to the next change.
 - Keep every `install.sh` idempotent; they get re-run after changes.
 
-## Testing in the KVM VM
+## Testing in the KVM VM (optional)
 
 `test/vm.sh` boots an Arch VM under KVM with virtio-gpu GL (needed for the
 Wayland compositor), in an SDL window with app id `rice-vm` at the host's
@@ -118,9 +153,9 @@ the VM it belongs to, `~/.ssh` works too. A `Host` entry in `~/.ssh/config`
 
 ```sh
 ssh -p 2222 <user>@127.0.0.1
-# commands inside the running session need its environment; autostart.conf
+# commands inside the running session need its environment; wm startup
 # exports it to the systemd user manager, so import it from there:
-ssh -p 2222 <user>@127.0.0.1 'export $(systemctl --user show-environment | grep -E "^(WAYLAND_DISPLAY|SWAYSOCK|SCROLLSOCK)="); scrollmsg reload'
+ssh -p 2222 <user>@127.0.0.1 'export $(systemctl --user show-environment | grep -E "^(WAYLAND_DISPLAY|WM_SOCK|DISPLAY)="); misu-wm-config >/dev/null; wm msg reload'
 ```
 
 Screenshot of the VM's display over QMP. It needs a non-GL display: the default

@@ -6,17 +6,20 @@ import qs.services
 import "../../popouts"
 import "../.."
 
-// Calendar card: a centred head (the 力 seal and today's weekday) over the
-// month grid (QsCalendarEmbed, which pages months and snaps back to today on a
-// day roll). The clock ticks only while open, so the weekday rolls at midnight.
+// Calendar card, flat like the others: the 力 CALENDAR title, today in large
+// type (the date, its weekday and month, the time at the right), a hairline,
+// then the month grid. The clock ticks only while open.
 Item {
     id: root
 
     property real s: 1
     property bool open: false
 
-    readonly property real pad: 12 * root.s
+    readonly property real pad: 11 * root.s
+    readonly property real indent: 7 * root.s
     readonly property color ink: Theme.ink(Theme.effectiveSurface)
+    readonly property color inkDim: Theme.inkOn(Theme.effectiveSurface, Theme.surfaceVariantText, 3.0)
+    readonly property color line: Qt.rgba(root.ink.r, root.ink.g, root.ink.b, 0.14)
     readonly property var loc: Qt.locale()
 
     implicitWidth: 272 * root.s
@@ -36,32 +39,70 @@ Item {
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: root.pad
-        spacing: 10 * root.s
+        spacing: 8 * root.s
 
-        // the 力 seal and today's weekday; the date is marked in the grid below.
-        Row {
-            anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 6 * root.s
-            BrandMark {
-                anchors.verticalCenter: parent.verticalCenter
-                size: 11 * root.s
-                color: Theme.vermLit
+        PopoutTitle {
+            text: "CALENDAR"
+            s: root.s
+        }
+
+        // today
+        Item {
+            width: parent.width
+            height: day.implicitHeight
+
+            Text {
+                id: day
+                anchors.left: parent.left
+                anchors.leftMargin: root.indent
+                text: clock.date.getDate()
+                color: root.ink
+                font.family: Theme.fontPrimary
+                font.pixelSize: Theme.h1 * root.s
+                font.weight: Font.Medium
+                font.features: ({ "tnum": 1 })
+            }
+            Column {
+                anchors.left: day.right
+                anchors.leftMargin: 10 * root.s
+                anchors.verticalCenter: day.verticalCenter
+                spacing: 1 * root.s
+                Text {
+                    text: root.loc.standaloneDayName(clock.date.getDay(), Locale.LongFormat)
+                    color: root.ink
+                    font.family: Theme.fontPrimary
+                    font.pixelSize: Theme.h4 * root.s
+                    font.weight: Font.DemiBold
+                }
+                Text {
+                    text: root.loc.standaloneMonthName(clock.date.getMonth(), Locale.LongFormat) + " " + clock.date.getFullYear()
+                    color: root.inkDim
+                    font.family: Theme.fontPrimary
+                    font.pixelSize: Theme.h6 * root.s
+                }
             }
             Text {
-                anchors.verticalCenter: parent.verticalCenter
-                text: root.loc.standaloneDayName(clock.date.getDay(), Locale.LongFormat).toUpperCase()
-                color: Theme.vermLit
+                anchors.right: parent.right
+                anchors.rightMargin: root.indent
+                anchors.verticalCenter: day.verticalCenter
+                text: TimeFormat.format(clock.date)
+                color: root.inkDim
                 font.family: Theme.fontPrimary
-                font.pixelSize: 10 * root.s
-                font.letterSpacing: 1.5
+                font.pixelSize: Theme.h3 * root.s
+                font.features: ({ "tnum": 1 })
             }
+        }
+
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: root.line
         }
 
         CalendarGrid {
             width: parent.width
             s: root.s
             open: root.open
-            framed: false
         }
     }
 }

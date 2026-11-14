@@ -35,11 +35,17 @@ Item {
         }
         return false;
     }
-    // The open card's keyboard need ("ondemand" for the network password
-    // field), else none.
+    // The open card's keyboard need: its record's `keyboard` ("exclusive" for
+    // the launcher), else "exclusive" while its body sets wantsKeyboard (the
+    // network card's password field), else none. A card that takes no
+    // keyboard leaves the focused window's focus alone when clicked.
     readonly property string keyboardMode: {
         for (const r of root.records)
-            if (r.id === root.openId) return r.keyboard || "none";
+            if (r.id === root.openId && r.keyboard) return r.keyboard;
+        for (let i = 0; i < cards.count; ++i) {
+            const c = cards.itemAt(i);
+            if (c && c.menuOpen && c.wantsKeyboard) return "exclusive";
+        }
         return "none";
     }
 

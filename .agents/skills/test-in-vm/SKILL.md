@@ -47,17 +47,14 @@ the guest only).
 These fix QEMU, not the rice, so they go in the guest's system config and never
 in a module:
 
-- Cursor: QEMU shows the guest's hardware cursor inverted, so the guest draws
-  its own: `echo WLR_NO_HARDWARE_CURSORS=1 | sudo tee -a /etc/environment`, then
-  log out and back in. `test/vm.sh` uses an SDL window (`show-cursor=off`), which
-  hides the host pointer; GTK showed it as a second cursor.
+- Cursor: wm draws each seat's cursor in the scene. `test/vm.sh` uses an SDL
+  window with `show-cursor=off` to hide the host pointer over the guest.
 - Shortcuts: Ctrl+Alt+G in the VM window grabs the keyboard, and the host
   (niri) then passes Super to the guest. That needs QEMU's SDL on Wayland,
   which `test/vm.sh` sets; under XWayland the host keeps Super.
-- Scrolling: the host touchpad reaches the guest as `QEMU_Virtio_Tablet`, a
-  pointer, so the rice's touchpad `natural_scroll` misses it:
-  `/etc/scroll/config.d/vm.conf` with
-  `input "1575:3:QEMU_Virtio_Tablet" natural_scroll enabled`.
+- Scrolling: QEMU's tablet is a pointer, so touchpad settings do not apply.
+  For guest-only natural scrolling, set `input.mouse.natural_scroll` in
+  `~/.config/wm/config.json`, regenerate with `misu-wm-config` and reload wm.
 - Builds that run out of memory (Electron apps from the AUR): add zram swap with
   `zram-generator` and `/etc/systemd/zram-generator.conf` (`[zram0]`,
   `zram-size = ram`).
@@ -83,6 +80,35 @@ Reboot after the first full install to get the greeter. Commands inside the
 running session import its environment:
 
 ```sh
-export $(systemctl --user show-environment | grep -E '^(WAYLAND_DISPLAY|SWAYSOCK|SCROLLSOCK)=')
+export $(systemctl --user show-environment | grep -E '^(WAYLAND_DISPLAY|WM_SOCK|DISPLAY)=')
 grim /tmp/s.png   # then scp it back (scp -P 2222) and read it
 ```
+
+## Existing headless guest
+
+Check `~/.cache/rice-vm/README.md` for existing SSH and image setup. When the
+working checkout is in `~/Projects/misu`, run **that checkout's** `test/vm.sh`,
+not the older host `/opt/misu/test/vm.sh`: the script shares its own parent
+directory as the guest's `/opt/misu`. Keep the host install path check intact.
+A new disk in another `RICE_VM_DIR` preserves the existing test guest. Never
+remove a VM disk to get a fresh install when an isolated disk can be used.
+Use `-display egl-headless` for GUI-free validation and `wm msg seat N screenshot`
+or grim inside the guest for screenshots. Import `WM_SOCK` from the user manager.
+
+For unattended AUR builds, enable lingering for the guest user. If repeated SSH
+logouts remove fakeroot's SysV IPC objects (`semop: Invalid argument`), set
+`[Login] RemoveIPC=no` in a guest-only logind drop-in and restart logind before
+retrying. Keep this out of Misu's host modules. If a release signing key cannot
+be fetched, provision the exact fingerprint declared by the package, then retry
+with signature checking enabled.
+
+For wm portal integration, import the session environment, then run
+`MISU_PORTAL_UI=1 python /opt/misu/test/portal-check.py`. It builds a small
+PipeWire consumer with `cc` and `pkg-config` (libpipewire and libpng headers),
+confirms the chooser with Enter and writes a nonuniform captured screen image
+to `/tmp/misu-portal-frame.png`. Run it only in the test desktop. With a changing
+window, `MISU_PORTAL_FRAMES=3` checks successive frames.
+
+Cloud images may automount the EFI partition. Limine's shell tools misread a
+stacked autofs/vfat mount; give the guest an explicit vfat entry in fstab and
+set its ESP_PATH in /etc/default/limine before the first boot-module install.

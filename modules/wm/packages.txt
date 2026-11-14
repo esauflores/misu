@@ -1,16 +1,22 @@
-sway-scroll
+rust
+pkgconf
+seatd
+libinput
+libdisplay-info
+xwayland-satellite
 fuzzel
 swaybg
 swaylock
 swayidle
 cliphist
 hyprpicker
-wlsunset
 grim
 slurp
 wl-clipboard
 libnotify
 brightnessctl
+playerctl
 polkit-gnome
-xdg-desktop-portal-wlr
+# Upstream 0.9 fixes overlapping ext-capture frames in the 0.8.4 repo build.
+xdg-desktop-portal-wlr-git
 xdg-desktop-portal-gtk

@@ -15,7 +15,7 @@ Singleton {
     property real level: 0              // active Wi-Fi signal 0..1
     readonly property var wifi: ({ strength: Math.round(root.level * 100) })
     property string activeSsid: ""
-    property var accessPoints: []       // { ssid, bssid, strength, band, security, saved, active }
+    property var accessPoints: []       // { ssid, bssid, strength, band, security, saved, profileUuid, active }
     property bool wifiPresent: false
     property bool wifiRadio: false
     property string wifiConnectivity: "" // "Connecting" while a Wi-Fi link comes up
@@ -43,7 +43,7 @@ Singleton {
     function parse(text) {
         let section = "";
         let kind = "", connecting = false, wifiDev = false, radio = false;
-        const aps = [], saved = {};
+        const aps = [], saved = Object.create(null);
         let vpn = "";
         for (const line of text.split("\n")) {
             if (line.indexOf("##") === 0) { section = line.substring(2); continue; }
@@ -67,13 +67,16 @@ Singleton {
                 });
             } else if (section === "con") {
                 const [name, type, active] = f;
-                if (type === "802-11-wireless") saved[name] = true;
                 if ((type === "vpn" || type === "wireguard") && active === "yes") vpn = name;
+            } else if (section === "saved") {
+                const [uuid, ssid] = f;
+                if (uuid && ssid) saved[ssid] = uuid;
             }
         }
         let activeSsid = "", level = 0;
         for (const ap of aps) {
-            ap.saved = saved[ap.ssid] === true;
+            ap.profileUuid = saved[ap.ssid] || "";
+            ap.saved = ap.profileUuid !== "";
             if (ap.active) { activeSsid = ap.ssid; level = ap.strength / 100; }
         }
         root.kind = kind;
@@ -94,7 +97,10 @@ Singleton {
             "echo '##dev'; nmcli -t -f TYPE,STATE device;"
             + " echo '##radio'; nmcli -t -f WIFI radio;"
             + " echo '##wifi'; nmcli -t -f IN-USE,SSID,BSSID,SIGNAL,FREQ,SECURITY device wifi list --rescan " + (snapshot.rescan ? "yes" : "no") + ";"
-            + " echo '##con'; nmcli -t -f NAME,TYPE,ACTIVE connection show"]
+            + " echo '##con'; nmcli -t -f NAME,TYPE,ACTIVE connection show;"
+            + " echo '##saved'; nmcli -t -f UUID,TYPE connection show | while IFS=: read -r uuid type; do"
+            + " [ \"$type\" = 802-11-wireless ] || continue;"
+            + " printf '%s:' \"$uuid\"; nmcli -g 802-11-wireless.ssid connection show uuid \"$uuid\"; done"]
         stdout: StdioCollector { onStreamFinished: root.parse(text) }
         onExited: snapshot.rescan = false
     }
@@ -109,17 +115,16 @@ Singleton {
     }
 
     Process {
+        id: monitor
         command: ["nmcli", "monitor"]
         running: true
         stdout: SplitParser { onRead: debounce.restart() }
         onExited: monitorRestart.start()
     }
-    Timer { id: monitorRestart; interval: 5000; onTriggered: debounce.restart() }
+    Timer { id: monitorRestart; interval: 5000; onTriggered: { monitor.running = true; debounce.restart(); } }
     Component.onCompleted: debounce.restart()
 
-    // owners that want VPN state kept fresh (nmcli monitor already reports
-    // VPN changes; this just forces a snapshot when one starts watching)
-    function setVpnPolling(owner, on) { if (on) debounce.restart(); }
+    function refreshState() { debounce.restart(); }
 
     function run(args) {
         Quickshell.execDetached(args);
@@ -130,11 +135,12 @@ Singleton {
     // outcome.
     signal replied(int id, bool ok, string error)
     property int _nextId: 1
-    function connectWifi(ssid, password, bssid, hidden) {
-        const args = ["nmcli", "device", "wifi", "connect", ssid];
-        if (password && password.length > 0) args.push("password", password);
-        if (bssid && bssid.length > 0) args.push("bssid", bssid);
-        if (hidden) args.push("hidden", "yes");
+    function connectWifi(ssid, password, bssid, hidden, profileUuid) {
+        const args = profileUuid ? ["nmcli", "connection", "up", "uuid", profileUuid]
+            : ["nmcli", "device", "wifi", "connect", ssid];
+        if (password && password.length > 0 && !profileUuid) args.push("password", password);
+        if (bssid && bssid.length > 0) args.push(profileUuid ? "ap" : "bssid", bssid);
+        if (hidden && !profileUuid) args.push("hidden", "yes");
         root.wifiConnectivity = "Connecting";
         const id = root._nextId++;
         requestComp.createObject(root, { requestId: id, command: args, running: true });

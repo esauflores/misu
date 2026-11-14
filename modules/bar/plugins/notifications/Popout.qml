@@ -96,7 +96,6 @@ Item {
                 PopoutTitle {
                     anchors.verticalCenter: parent.verticalCenter
                     text: "NOTIFICATIONS"
-                    color: root.inkDim
                     s: root.s
                 }
                 Text {
@@ -105,7 +104,7 @@ Item {
                     text: root.items.length
                     color: root.inkDim
                     font.family: Theme.fontPrimary
-                    font.pixelSize: 9 * root.s
+                    font.pixelSize: Theme.h6 * root.s
                 }
             }
             Row {
@@ -146,7 +145,7 @@ Item {
                     text: Notifs.dnd ? "Do not disturb is on" : "No notifications"
                     color: root.inkDim
                     font.family: Theme.fontPrimary
-                    font.pixelSize: 11 * root.s
+                    font.pixelSize: Theme.h5 * root.s
                 }
             }
         }
@@ -215,11 +214,11 @@ Item {
                             id: appLabel
                             anchors.verticalCenter: parent.verticalCenter
                             width: Math.min(implicitWidth, parent.width - countPill.width - 5 * root.s)
-                            text: (g.app || "Unknown").toUpperCase()
+                            text: g.app || "Unknown"
                             color: g.critical ? Theme.error : root.inkDim
                             font.family: Theme.fontPrimary
-                            font.pixelSize: 9 * root.s
-                            font.letterSpacing: 1.2
+                            font.pixelSize: Theme.h5 * root.s
+                            font.weight: Font.Medium
                             elide: Text.ElideRight
                         }
                         Rectangle {
@@ -236,7 +235,7 @@ Item {
                                 text: g.count
                                 color: root.inkDim
                                 font.family: Theme.fontPrimary
-                                font.pixelSize: 8.5 * root.s
+                                font.pixelSize: Theme.h6 * root.s
                             }
                         }
                         MaterialIcon {
@@ -257,7 +256,7 @@ Item {
                             text: Notifs.timeLabel(g.entries[0])
                             color: root.inkDim
                             font.family: Theme.fontPrimary
-                            font.pixelSize: 9 * root.s
+                            font.pixelSize: Theme.h6 * root.s
                         }
                         // clear this app's stack.
                         MaterialIcon {
@@ -327,7 +326,7 @@ Item {
                         text: e.n.summary || ""
                         color: eHover.hovered && e.action ? Theme.vermLit : root.ink
                         font.family: Theme.fontPrimary
-                        font.pixelSize: 12 * root.s
+                        font.pixelSize: Theme.h5 * root.s
                         font.weight: Font.DemiBold
                         elide: Text.ElideRight
                     }
@@ -341,7 +340,7 @@ Item {
                         text: Notifs.timeLabel(e.n)
                         color: root.inkDim
                         font.family: Theme.fontPrimary
-                        font.pixelSize: 8.5 * root.s
+                        font.pixelSize: Theme.h6 * root.s
                     }
                 }
                 Text {
@@ -350,7 +349,7 @@ Item {
                     visible: text.length > 0
                     color: root.inkDim
                     font.family: Theme.fontPrimary
-                    font.pixelSize: 11 * root.s
+                    font.pixelSize: Theme.h5 * root.s
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                     maximumLineCount: 2

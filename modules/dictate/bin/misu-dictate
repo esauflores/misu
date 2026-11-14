@@ -1,0 +1,168 @@
+#!/usr/bin/env bash
+# misu-dictate: speak, and the text is saved to a file (Super+Shift+Z twice).
+#
+#   misu-dictate toggle   start listening, or stop and save
+#   misu-dictate start    listen (see source); live subtitles on screen
+#   misu-dictate stop     final transcription, saved to
+#                         ~/Documents/Dictations/<date time>.txt (path printed)
+#                         and, up to 1000 characters (about a minute of
+#                         speech: a message, not a meeting), copied too
+#   misu-dictate cancel   stop and throw it away
+#   misu-dictate source [mic|computer|both]
+#                         what it listens to (the bar's subtitles card sets
+#                         it): the microphone, what the computer plays, or
+#                         both mixed; prints it when none is given
+#   misu-dictate lang [en|es]
+#                         the language spoken (the subtitles card sets it):
+#                         English or Spanish; prints it when none is given
+#   misu-dictate serve    start the transcriber if it isn't running (at login,
+#                         so the first Super+Shift+Z doesn't wait ~3 s for it)
+#
+# The audio goes to $XDG_RUNTIME_DIR/misu-dictate/audio.f32 (raw 16 kHz
+# floats, readable while it's written) through an ffmpeg unit. The transcriber,
+# misu-dictate-server, stays up with its model loaded between dictations: it
+# writes the live text and the final one to state.json there, which the bar
+# shows as subtitles.
+set -euo pipefail
+
+state=${XDG_RUNTIME_DIR:-/tmp}/misu-dictate
+source_file=${XDG_STATE_HOME:-$HOME/.local/state}/rice/dictate-source
+copy_max=1000   # characters; longer dictations are only saved to the file
+lang_file=${XDG_STATE_HOME:-$HOME/.local/state}/rice/dictate-lang
+
+# Units get the session's bus and Wayland and
+# ~/.local/bin plus mise's uv on PATH.
+run_unit() {
+  systemd-run --user --quiet --collect \
+    --setenv=DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-}" \
+    --setenv=WAYLAND_DISPLAY="${WAYLAND_DISPLAY:-}" \
+    --setenv=PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH" \
+    "$@"
+}
+
+get_source() {
+  local s
+  s=$(cat "$source_file" 2>/dev/null || true)
+  case $s in mic | computer | both) echo "$s" ;; *) echo mic ;; esac
+}
+
+set_source() {
+  case ${1:-} in
+    mic | computer | both) ;;
+    *) echo "usage: misu-dictate source [mic|computer|both]" >&2; exit 2 ;;
+  esac
+  mkdir -p "${source_file%/*}"
+  echo "$1" >"$source_file"
+}
+
+listening() {
+  [[ -e $state/listening ]]
+}
+
+say() {
+  # the overlay's state: listening, finishing, done or idle
+  jq -cn --arg s "$1" --arg t "${2:-}" '{state: $s, text: $t}' >"$state/state.json.tmp"
+  mv "$state/state.json.tmp" "$state/state.json"
+}
+
+serve() {
+  mkdir -p "$state"
+  get_lang >"$state/lang"   # the model the server loads ahead
+  if ! systemctl --user is-active --quiet misu-dictate-server; then
+    run_unit --unit=misu-dictate-server misu-dictate-server "$state"
+  fi
+}
+
+get_lang() {
+  local l
+  l=$(cat "$lang_file" 2>/dev/null || true)
+  case $l in en | es) echo "$l" ;; *) echo en ;; esac
+}
+set_lang() {
+  case ${1:-} in
+    en | es) ;;
+    *) echo "usage: misu-dictate lang [en|es]" >&2; exit 2 ;;
+  esac
+  mkdir -p "${lang_file%/*}"
+  echo "$1" >"$lang_file"
+}
+start() {
+  listening && return
+  mkdir -p "$state"
+  rm -f "$state/audio.f32" "$state/final.txt" "$state/finish"
+  : >"$state/audio.f32"
+  get_lang >"$state/lang"
+  touch "$state/listening"
+  # a model needs a few seconds to load (the server's first start, or another
+  # language); the audio is kept from the start meanwhile, and the server says
+  # listening once it's loaded
+  if systemctl --user is-active --quiet misu-dictate-server && [[ -e $state/ready-$(get_lang) ]]; then
+    say listening
+  else
+    say loading
+  fi
+
+  serve
+  # the default source and the default sink's monitor are whatever is current.
+  # ~8 ms fragments and no probing keep it near live (the defaults lag ~110 ms,
+  # ~225 ms with both, as amix lines the two up by sample count, not time).
+  local pulse=(-f pulse -fragment_size 1600 -analyzeduration 0 -probesize 32)
+  local mic=("${pulse[@]}" -i @DEFAULT_SOURCE@) computer=("${pulse[@]}" -i @DEFAULT_MONITOR@)
+  local inputs
+  case $(get_source) in
+    mic)      inputs=("${mic[@]}") ;;
+    computer) inputs=("${computer[@]}") ;;
+    both)     inputs=("${mic[@]}" "${computer[@]}" -filter_complex "amix=inputs=2:duration=longest:normalize=0") ;;
+  esac
+  run_unit --unit=misu-dictate-rec -p KillSignal=SIGINT -p SuccessExitStatus=255 \
+    ffmpeg -hide_banner -loglevel error -nostdin "${inputs[@]}" \
+      -y -ac 1 -ar 16000 -f f32le -flush_packets 1 "$state/audio.f32"
+
+  # the bar reads state.json while dictation lasts
+  qs -c misu ipc call dictate wake >/dev/null 2>&1 || true
+}
+
+stop() {
+  local text i
+  listening || return 0
+  systemctl --user stop misu-dictate-rec 2>/dev/null || true
+  rm -f "$state/listening"
+  touch "$state/finish"
+
+  # The server answers with final.txt in a second or two.
+  for ((i = 0; i < 300; i++)); do
+    [[ -e $state/final.txt ]] && break
+    sleep 0.1
+  done
+  [[ -e $state/final.txt ]] || { say idle; echo "misu-dictate: no transcript" >&2; exit 1; }
+
+  text=$(cat "$state/final.txt")
+  # the audio lives in RAM ($XDG_RUNTIME_DIR, ~230 MB an hour): gone once saved
+  rm -f "$state/audio.f32" "$state/final.txt"
+  if [[ -n $text ]]; then
+    local dir file
+    dir=$(xdg-user-dir DOCUMENTS 2>/dev/null || echo "$HOME/Documents")/Dictations
+    file="$dir/$(date '+%Y-%m-%d %H-%M-%S').txt"
+    mkdir -p "$dir"
+    printf '%s\n' "$text" >"$file"
+    printf '%s\n' "$file"
+    if ((${#text} <= copy_max)); then printf '%s' "$text" | wl-copy; fi
+  fi
+}
+
+cancel() {
+  systemctl --user stop misu-dictate-rec 2>/dev/null || true
+  rm -f "$state/listening" "$state/finish" "$state/audio.f32"
+  say idle
+}
+
+case ${1:-} in
+  toggle) if listening; then stop; else start; fi ;;
+  start)  start ;;
+  stop)   stop ;;
+  cancel) cancel ;;
+  serve)  serve ;;
+  lang)   if [[ -n ${2:-} ]]; then set_lang "$2"; else get_lang; fi ;;
+  source) if [[ -n ${2:-} ]]; then set_source "$2"; else get_source; fi ;;
+  *)      echo "usage: misu-dictate toggle | start | stop | cancel | serve | lang [en|es] | source [mic|computer|both]" >&2; exit 2 ;;
+esac

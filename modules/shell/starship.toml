@@ -20,8 +20,8 @@ crimson = "#E64553"  # error red
 
 [directory]
 style = "fg:dir_fg bg:dir_bg bold"
-truncation_length = 3
-truncation_symbol = "…/"
+truncation_length = 0
+truncate_to_repo = false
 read_only = " 󰌾"
 read_only_style = "fg:crimson bg:dir_bg bold"
 # Nerd Font half-circles = the pill caps

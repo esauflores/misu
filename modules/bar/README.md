@@ -1,6 +1,6 @@
 # misu
 
-A Quickshell bar for scroll (sway fork): a single ink rail on the right edge, a card that
+A Quickshell bar for wm: a single ink rail on the right edge, a card that
 slides out of the rail for each widget, and misu's own notification popups.
 
 ```sh
@@ -30,7 +30,14 @@ plugins/osd/           passive Ito-style volume, brightness and microphone displ
 ```
 
 Plugins: `audio`, `battery`, `bluetooth`, `calendar` (clock),
-`aiusage` (Claude and Codex usage via the `ai-usagebar` CLI, a tab each), `mpris`, `network`, `notifications`,
+`aiusage` (Claude and Codex usage via the `ai-usagebar` CLI, a tab each),
+`mpris`, `network`, `notifications`,
+`dictate` (live subtitles over the optional `dictate` module's `misu-dictate`, Super+Shift+Z: a card to pick the computer's audio,
+the microphone or both, and the subtitles overlay; its rail button stays hidden while the module isn't installed),
+`launcher` (app search over the desktop entries; no rail button, Super+Space opens it),
+`clipboard` (cliphist history with image thumbnails; no rail button, Super+Shift+V opens it),
+`wallpaper` (a grid of `~/Pictures/Wallpapers` over `wm`'s `misu-wall`; no rail button, Super+Shift+Q opens it),
+`session` (lock, suspend, log out, restart, power off; no rail button, Super+Esc opens it),
 `share` (what to share on a screen share, over `wm`'s `misu-share-pick`; no rail button, the portal opens it). Built-in rail widgets:
 `quick-settings` (decorative Misu mark), `workspaces` (5 fixed dots plus any
 extra workspaces) and `tray`.
@@ -54,7 +61,8 @@ its own names inline through `MaterialIcon { name: ...; size: ... }`.
 
 ```sh
 qs -c misu ipc call menu toggle audio       # any card: audio network bluetooth
-                                            #   battery calendar notifications mpris aiusage
+                                            #   battery calendar notifications mpris aiusage dictate
+                                            #   launcher clipboard wallpaper session
 qs -c misu ipc call bar toggle              # hide/reveal the rail
 qs -c misu ipc call osd brightness          # refresh brightness OSD after brightnessctl
 ```
@@ -68,9 +76,9 @@ Optional `~/.config/misu/config.json` (live-reloaded). Every key has a default:
 | `rail.size` | `48` | rail width (px) |
 | `rail.reveal` | `true` | `false` hides the rail until hover |
 | `rail.top` | `["quick-settings","workspaces"]` | widget ids per zone |
-| `rail.center` | `["clock","ai-usage"]` | |
+| `rail.center` | `["clock","ai-usage","mpris","dictate"]` | |
 | `rail.bottom` | `["tray","notifications","audio-output","bluetooth","network","battery"]` | |
-| `fontScale` | `1.3` | clamped 0.7–1.6 |
+| `fontScale` | `1.0` | clamped 0.7–1.6; multiplied by Theme.cardScale (1.0) |
 | `fontFamily` | `"Space Grotesk"` | |
 | `frameThickness` / `frameCorner` / `frameOpacity` | `2` / `8` / `1` | |
 | `markText` / `markImage` | `"力"` / `""` | rail brand mark |
@@ -90,9 +98,8 @@ Rewriting the file recolors Misu live.
 
 ## Runtime dependencies
 
-Binaries: `scrollmsg` (or `wm`, under wm: `services/Wm.qml` follows `wm msg
-subscribe` when `$WM_SOCK` is set), `nmcli`, `pactl`, `bluetoothctl`, `powerprofilesctl`,
-`brightnessctl`, `sh`, and `ai-usagebar` (AUR `ai-usagebar-bin`; the AI usage
+Binaries: `wm` (`services/Wm.qml` follows `wm msg subscribe`), `nmcli`, `pactl`, `bluetoothctl`, `powerprofilesctl`,
+`brightnessctl`, `sh`, `jq`, `xdg-open`, `misu-dictate` (from `dictate`, optional), and `ai-usagebar` (AUR `ai-usagebar-bin`; the AI usage
 card runs `ai-usagebar usage --json` every five minutes and when opened. Claude
 and Codex work from their CLIs' logins; other providers go in
 `~/.config/ai-usagebar/config.toml`).
@@ -112,3 +119,6 @@ The wallpaper is not misu's job; use swaybg.
 
 The former Nix container smoke test was removed with the Nix configuration.
 Run Misu from a Quickshell session with `qs -c misu`.
+
+The bar follows `wm msg subscribe` and switches workspaces for seat 0.
+wm draws each seat's cursor; no pointer overlay or helper card is needed.

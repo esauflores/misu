@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+# misu-ai-pointer move|click|double-click|drag|scroll|type|key ARGS…
+set -euo pipefail
+case ${1:-} in
+  move) shift; exec misu-agent-seat pointer "$@" ;;
+  click|double-click|drag|scroll|type|key) exec misu-agent-seat "$@" ;;
+  *) echo 'usage: misu-ai-pointer move|click|double-click|drag|scroll|type|key ARGS…' >&2; exit 2 ;;
+esac

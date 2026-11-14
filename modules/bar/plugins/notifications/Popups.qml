@@ -101,7 +101,7 @@ PanelWindow {
                             visible: text.length > 0
                             color: Theme.surfaceVariantText
                             font.family: Theme.fontPrimary
-                            font.pixelSize: 10
+                            font.pixelSize: Theme.h6
                             elide: Text.ElideRight
                         }
                         Text {
@@ -109,7 +109,7 @@ PanelWindow {
                             text: card.n.summary || ""
                             color: Theme.surfaceText
                             font.family: Theme.fontPrimary
-                            font.pixelSize: 14
+                            font.pixelSize: Theme.h4
                             font.weight: Font.DemiBold
                             wrapMode: Text.Wrap
                             maximumLineCount: 2
@@ -121,7 +121,7 @@ PanelWindow {
                             visible: text.length > 0
                             color: Theme.surfaceVariantText
                             font.family: Theme.fontPrimary
-                            font.pixelSize: 12
+                            font.pixelSize: Theme.h5
                             textFormat: Text.StyledText
                             wrapMode: Text.Wrap
                             maximumLineCount: 4

@@ -1,0 +1,17 @@
+# Global mise tools (linked to ~/.config/mise/config.toml), kept current with
+# `mise up`. A project's own mise.toml can pin other versions.
+[tools]
+# Runtimes; Node is the current LTS.
+node = "lts"
+bun = "latest"
+uv = "latest"
+pnpm = "latest"
+# Bitwarden's `bw` command (its standalone binary)
+bitwarden = "latest"
+# AI CLIs: Claude Code and Codex as their native binaries
+claude = "latest"
+codex = "latest"
+atuin = "latest"
+gh = "latest"
+java = "temurin-21"
+oha = "latest"

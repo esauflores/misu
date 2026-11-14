@@ -5,7 +5,7 @@ import qs.services
 import "../.."
 
 // The device switcher shared by the audio output and input mixers: a header
-// showing the current default device (icon + name + a chevron) that toggles a
+// showing the current default device (icon, name, a dim detail, a chevron) that toggles a
 // revealed list of the available devices, each selectable with a check on the
 // current default. The host owns `listOpen` and switches the default on `picked`.
 Column {
@@ -17,6 +17,7 @@ Column {
     property bool listOpen: false
     property string emptyLabel: ""
     property string fallbackIcon: "speaker"
+    property string detail: ""       // dim, before the chevron (a codec)
 
     signal toggled()
     signal picked(var node)
@@ -30,30 +31,47 @@ Column {
         keepEnabledLook: true
         onClicked: root.toggled()
 
-        Row {
+        Item {
             id: headRow
             anchors.left: parent.left
             anchors.right: parent.right
             anchors.verticalCenter: parent.verticalCenter
-            spacing: 8 * root.s
+            implicitHeight: 18 * root.s
 
             MaterialIcon {
+                id: headIcon
+                anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 size: 15 * root.s
                 name: root.current ? Audio.nodeIcon(root.current) : root.fallbackIcon
                 color: header.contentColor
             }
             Text {
-                width: parent.width - (15 + 16 + 8 * 2) * root.s
+                anchors.left: headIcon.right
+                anchors.leftMargin: 8 * root.s
+                anchors.right: headDetail.left
+                anchors.rightMargin: 6 * root.s
                 anchors.verticalCenter: parent.verticalCenter
                 text: root.current ? Audio.nodeLabel(root.current) : root.emptyLabel
                 elide: Text.ElideRight
                 color: header.contentColor
                 font.family: Theme.fontPrimary
-                font.pixelSize: 11 * root.s
+                font.pixelSize: Theme.h5 * root.s
                 font.weight: Font.DemiBold
             }
+            Text {
+                id: headDetail
+                anchors.right: chevron.left
+                anchors.rightMargin: 4 * root.s
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.detail
+                color: Theme.inkOn(Theme.effectiveSurface, Theme.surfaceVariantText, 3.0)
+                font.family: Theme.fontPrimary
+                font.pixelSize: Theme.h6 * root.s
+            }
             MaterialIcon {
+                id: chevron
+                anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 size: 16 * root.s
                 name: "expand_more"

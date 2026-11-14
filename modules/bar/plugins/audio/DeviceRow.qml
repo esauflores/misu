@@ -44,7 +44,7 @@ Item {
         elide: Text.ElideRight
         color: root.iconColor
         font.family: Theme.fontPrimary
-        font.pixelSize: Theme.fontSm
+        font.pixelSize: Theme.h4
     }
 
     Text {
@@ -56,7 +56,7 @@ Item {
         text: root.trailingText
         color: Theme.inkOn(Theme.effectiveSurface, Theme.surfaceVariantText, 3.0)
         font.family: Theme.fontPrimary
-        font.pixelSize: Theme.fontSm
+        font.pixelSize: Theme.h4
     }
 
     MaterialIcon {

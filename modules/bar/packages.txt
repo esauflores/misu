@@ -1,3 +1,4 @@
 ai-usagebar-bin
 ttf-material-symbols-variable
 otf-space-grotesk
+qt6-imageformats

@@ -1,9 +1,17 @@
 #!/usr/bin/env bash
-# misu-session: the greeter's Misu entry; sets the Wayland environment and starts scroll.
+# misu-session: the greeter's Misu entry; sets the Wayland environment and starts wm.
 
-export PATH="$HOME/.local/bin:$PATH"
+# mise's shims, so tools it installs (the AI CLIs) also reach apps started
+# outside a shell: wm bindings, the bar.
+export PATH="$HOME/.local/bin:$HOME/.local/share/mise/shims:$PATH"
 export ELECTRON_OZONE_PLATFORM_HINT=auto QT_WAYLAND_DISABLE_WINDOWDECORATION=1 GSK_RENDERER=gl _JAVA_AWT_WM_NONREPARENTING=1
 export QT_QPA_PLATFORM='wayland;xcb' GDK_BACKEND='wayland,x11,*'
+# Qt apps (the bar too) take theme's qt6ct.conf: Adwaita style and icons.
+export QT_QPA_PLATFORMTHEME=qt6ct
 export XCURSOR_THEME=Bibata-Modern-Ice XCURSOR_SIZE=20
 
-exec dbus-run-session scroll
+# The login's user bus (/run/user/<uid>/bus), the one systemd's user services
+# (gnome-keyring's Secret Service, the portals) are on, not a private one.
+export XDG_CURRENT_DESKTOP=wm XDG_SESSION_DESKTOP=wm XDG_SESSION_TYPE=wayland
+config=$(misu-wm-config) || exit 1
+exec wm --backend drm --config "$config"

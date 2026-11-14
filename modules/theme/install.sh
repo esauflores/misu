@@ -9,9 +9,11 @@ link "$M/theme/gtk-3.0/settings.ini" "$home/.config/gtk-3.0/settings.ini"
 link "$M/theme/gtk-4.0/settings.ini" "$home/.config/gtk-4.0/settings.ini"
 link "$M/theme/qt6ct/qt6ct.conf" "$home/.config/qt6ct/qt6ct.conf"
 
-run install -Dm644 "$M/theme/wallpapers/black-hole.webp" /usr/share/backgrounds/rice/black-hole.webp
-if [[ ! -e $home/Pictures/Wallpapers/black-hole.webp ]]; then
-  as_user install -Dm644 "$M/theme/wallpapers/black-hole.webp" "$home/Pictures/Wallpapers/black-hole.webp"
+run install -Dm644 "$M/theme/wallpapers/black-hole.png" /usr/share/backgrounds/rice/black-hole.png
+# Older installs had it as WebP.
+run rm -f /usr/share/backgrounds/rice/black-hole.webp
+if [[ ! -e $home/Pictures/Wallpapers/black-hole.png ]]; then
+  as_user install -Dm644 "$M/theme/wallpapers/black-hole.png" "$home/Pictures/Wallpapers/black-hole.png"
 fi
 
 while read -r key value; do user_bus gsettings set org.gnome.desktop.interface "$key" "$value"; done <<'KEYS'

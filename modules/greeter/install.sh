@@ -1,5 +1,6 @@
 # greeter: Misu's own Quickshell login screen (shell.qml) under Cage on greetd.
-# The package's config.toml is kept as config.toml.pre-misu for uninstall.
+# The package's config.toml is kept as config.toml.pre-misu for uninstall. The
+# login also unlocks gnome-keyring.
 [[ ${BASH_SOURCE[0]} != "$0" ]] || { d=$(cd -- "$(dirname -- "$0")" && pwd -P); exec "$d/../../install.sh" "${d##*/}" "$@"; }
 
 install_packages greeter
@@ -17,5 +18,16 @@ echo "+ install $M/greeter/shell.qml -> /etc/greetd/misu/shell.qml (@USER@=$targ
 # Cage loads the "default" cursor theme, not XCURSOR_THEME; config.toml points
 # XCURSOR_PATH at this one, which inherits the Misu cursor.
 run install -Dm644 "$M/greeter/cursor/index.theme" /etc/greetd/misu/icons/default/index.theme
+
+# gnome-keyring (base) opens with the login password: its login keyring is made
+# at the first login and unlocked at every later one. A marked block in the
+# package's PAM file, so uninstall takes out only what this added.
+pam=/etc/pam.d/greetd
+if ! grep -q pam_gnome_keyring "$pam" 2>/dev/null; then
+  echo "+ add pam_gnome_keyring (auth, session auto_start) to $pam"
+  (( DRY_RUN )) || printf '%s\n' '# misu: gnome-keyring' \
+    'auth       optional     pam_gnome_keyring.so' \
+    'session    optional     pam_gnome_keyring.so auto_start' >>"$pam"
+fi
 
 run systemctl enable greetd

@@ -6,35 +6,50 @@ import Quickshell
 import Quickshell.Io
 import qs.services
 import "frame"
+import "lock"
 import "plugins/notifications" as Notifications
 import "plugins/osd" as Osd
+import "plugins/dictate" as Dictate
 import "plugins/share" as Share
 
-// Misu: an ink rail on the right edge of every output, for scroll. Run with
+// Misu: an ink rail on the right edge of every output, for wm. Run with
 // `qs -c misu` (or `qs -p <this dir>`). IPC:
 //   qs -c misu ipc call bar toggle
 //   qs -c misu ipc call menu toggle <card>  (any plugins/<card>: audio, battery,
 //                                           bluetooth, calendar, aiusage,
-//                                           mpris, network, notifications)
+//                                           mpris, network, notifications,
+//                                           launcher, clipboard, wallpaper,
+//                                           session)
 ShellRoot {
     id: shell
 
     Component.onCompleted: console.info("misu: loaded")
 
+    readonly property var screens: Array.from(Quickshell.screens)
+
     Variants {
-        model: Quickshell.screens
+        model: shell.screens
         Frame {}
     }
 
     Variants {
-        model: Quickshell.screens
+        model: shell.screens
         Notifications.Popups {}
     }
 
     Variants {
-        model: Quickshell.screens
+        model: shell.screens
         Osd.Popups {}
     }
+
+    // Dictation subtitles (misu-dictate, Super+Shift+Z).
+    Variants {
+        model: shell.screens
+        Dictate.Subtitles {}
+    }
+
+    // The lock screen (IPC target "lock"; misu-lock calls it).
+    Lock {}
 
     IpcHandler {
         target: "menu"

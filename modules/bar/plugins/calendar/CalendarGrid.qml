@@ -5,21 +5,22 @@ import Quickshell
 import qs.services
 import "../.."
 
-// Calendar-only embed: the calendar grid from MenuClock, without the weather
-// section. MenuClock stacks it above MenuWeather.
+// The calendar card's month grid, flat on the card: the month's name (a click
+// goes back to today's month) with the arrows that page months at its right,
+// the weekday initials, then the days, today filled. Days of the months
+// either side are left out. Snaps back to today's month on a day roll.
 Item {
     id: root
 
     property real s: 1
     property bool open: false
-    // false drops the bordered tile for a soft tinted fill, for hosts that
-    // already sit on a framed card (the calendar plugin).
-    property bool framed: true
 
     readonly property var loc: Qt.locale()
     readonly property int weekStart: root.loc.firstDayOfWeek % 7
+    readonly property color ink: Theme.inkOn(Theme.effectiveSurface, Theme.surfaceText)
+    readonly property color inkDim: Theme.inkOn(Theme.effectiveSurface, Theme.surfaceVariantText, 3.0)
 
-    implicitHeight: calCard.implicitHeight
+    implicitHeight: cal.implicitHeight
 
     SystemClock {
         id: clock
@@ -35,9 +36,13 @@ Item {
         const k = root.today.getFullYear() * 10000 + root.today.getMonth() * 100 + root.today.getDate();
         if (k !== root.rollKey) {
             root.rollKey = k;
-            root.viewYear = root.today.getFullYear();
-            root.viewMonth = root.today.getMonth();
+            root.home();
         }
+    }
+    readonly property bool atHome: root.viewYear === root.today.getFullYear() && root.viewMonth === root.today.getMonth()
+    function home() {
+        root.viewYear = root.today.getFullYear();
+        root.viewMonth = root.today.getMonth();
     }
 
     readonly property int offset: {
@@ -45,7 +50,6 @@ Item {
         return (firstDow - root.weekStart + 7) % 7;
     }
     readonly property int monthLen: new Date(root.viewYear, root.viewMonth + 1, 0).getDate()
-    readonly property int prevMonthLen: new Date(root.viewYear, root.viewMonth, 0).getDate()
     readonly property int rows: Math.ceil((offset + monthLen) / 7)
 
     function shiftMonth(delta) {
@@ -57,134 +61,111 @@ Item {
         root.viewYear = y;
     }
 
-    function isToday(day) {
-        return day === root.today.getDate()
-            && root.viewMonth === root.today.getMonth()
-            && root.viewYear === root.today.getFullYear();
-    }
-
-    Rectangle {
-        id: calCard
+    Column {
+        id: cal
         width: root.width
-        radius: Theme.radiusWidget
-        color: root.framed ? Theme.surface : Qt.rgba(Theme.surfaceText.r, Theme.surfaceText.g, Theme.surfaceText.b, 0.05)
-        border.width: root.framed ? Theme.borderWidth : 0
-        border.color: Theme.outline
-        implicitHeight: cal.implicitHeight + 2 * (10 * root.s)
-        SumiEdge { visible: root.framed }
+        spacing: 6 * root.s
 
-        Column {
-            id: cal
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.top: parent.top
-            anchors.margins: 10 * root.s
-            spacing: 6 * root.s
+        // month, arrows
+        Item {
+            width: parent.width
+            height: 26 * root.s
 
-            // Month nav header
-            Item {
-                width: parent.width
-                height: 28 * root.s
-
-                MaterialIcon {
-                    id: prevNav
-                    anchors.left: parent.left
-                    anchors.verticalCenter: parent.verticalCenter
-                    size: 18 * root.s
-                    name: "chevron_left"
-                    color: Theme.inkOn(Theme.effectiveSurface, prevArea.containsMouse ? Theme.surfaceText : Theme.surfaceVariantText, 3.0)
-                    MouseArea {
-                        id: prevArea
-                        anchors.fill: parent; anchors.margins: -6 * root.s
-                        hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                        onClicked: root.shiftMonth(-1)
-                    }
-                }
-                Text {
-                    anchors.centerIn: parent
-                    text: root.loc.standaloneMonthName(root.viewMonth, Locale.LongFormat) + " " + root.viewYear
-                    color: Theme.inkOn(Theme.effectiveSurface, Theme.surfaceText)
-                    font.family: Theme.fontPrimary
-                    font.pixelSize: Theme.fontMd * root.s
-                    font.weight: Font.Bold
-                }
-                MaterialIcon {
-                    anchors.right: parent.right
-                    anchors.verticalCenter: parent.verticalCenter
-                    size: 18 * root.s
-                    name: "chevron_right"
-                    color: Theme.inkOn(Theme.effectiveSurface, nextArea.containsMouse ? Theme.surfaceText : Theme.surfaceVariantText, 3.0)
-                    MouseArea {
-                        id: nextArea
-                        anchors.fill: parent; anchors.margins: -6 * root.s
-                        hoverEnabled: true; cursorShape: Qt.PointingHandCursor
-                        onClicked: root.shiftMonth(1)
-                    }
-                }
+            Text {
+                anchors.left: parent.left
+                anchors.leftMargin: 7 * root.s
+                anchors.verticalCenter: parent.verticalCenter
+                text: root.loc.standaloneMonthName(root.viewMonth, Locale.LongFormat) + " " + root.viewYear
+                color: monthHover.hovered && !root.atHome ? root.ink : (root.atHome ? root.ink : root.inkDim)
+                font.family: Theme.fontPrimary
+                font.pixelSize: Theme.h5 * root.s
+                font.weight: Font.DemiBold
+                HoverHandler { id: monthHover; enabled: !root.atHome; cursorShape: Qt.PointingHandCursor }
+                TapHandler { enabled: !root.atHome; onTapped: root.home() }
             }
-
-            // Weekday header row
             Row {
-                id: weekdays
-                width: parent.width
+                anchors.right: parent.right
+                anchors.rightMargin: 4 * root.s
+                anchors.verticalCenter: parent.verticalCenter
+                spacing: 12 * root.s
                 Repeater {
-                    model: 7
-                    delegate: Item {
-                        required property int index
-                        width: weekdays.width / 7
-                        height: 18 * root.s
-                        Text {
-                            anchors.centerIn: parent
-                            text: root.loc.standaloneDayName((root.weekStart + parent.index) % 7, Locale.NarrowFormat)
-                            color: Theme.inkOn(Theme.effectiveSurface, Theme.surfaceVariantText, 3.0)
-                            font.family: Theme.fontPrimary
-                            font.pixelSize: Theme.fontSm * root.s
-                            font.weight: Font.Medium
+                    model: [{ icon: "chevron_left", by: -1 }, { icon: "chevron_right", by: 1 }]
+                    MaterialIcon {
+                        id: arrow
+                        required property var modelData
+                        name: arrow.modelData.icon
+                        size: 20 * root.s
+                        color: arrowArea.containsMouse ? root.ink : root.inkDim
+                        MouseArea {
+                            id: arrowArea
+                            anchors.fill: parent
+                            anchors.margins: -5 * root.s
+                            hoverEnabled: true
+                            cursorShape: Qt.PointingHandCursor
+                            onClicked: root.shiftMonth(arrow.modelData.by)
                         }
                     }
                 }
             }
+        }
 
-            // Day grid
-            Grid {
-                id: dayGrid
-                width: parent.width
-                columns: 7
-                rowSpacing: 2 * root.s
-                columnSpacing: 0
+        // weekday initials
+        Row {
+            id: weekdays
+            width: parent.width
+            Repeater {
+                model: 7
+                delegate: Item {
+                    required property int index
+                    width: weekdays.width / 7
+                    height: 20 * root.s
+                    Text {
+                        anchors.centerIn: parent
+                        text: root.loc.standaloneDayName((root.weekStart + parent.index) % 7, Locale.NarrowFormat)
+                        color: root.inkDim
+                        font.family: Theme.fontPrimary
+                        font.pixelSize: Theme.h6 * root.s
+                        font.weight: Font.Medium
+                    }
+                }
+            }
+        }
 
-                Repeater {
-                    model: root.rows * 7
-                    delegate: Item {
-                        id: cell
-                        required property int index
-                        readonly property int dayNum: index - root.offset + 1
-                        readonly property bool inMonth: dayNum >= 1 && dayNum <= root.monthLen
-                        readonly property bool current: inMonth && root.isToday(dayNum)
-                        readonly property int ghostNum: dayNum < 1
-                            ? root.prevMonthLen + dayNum
-                            : dayNum - root.monthLen
-                        width: dayGrid.width / 7
-                        height: 26 * root.s
+        // days
+        Grid {
+            id: dayGrid
+            width: parent.width
+            columns: 7
+            rowSpacing: 2 * root.s
 
-                        Rectangle {
-                            anchors.centerIn: parent
-                            width: 24 * root.s; height: 24 * root.s
-                            radius: Theme.radiusWidget
-                            visible: cell.current
-                            color: Theme.primary
-                        }
-                        Text {
-                            anchors.centerIn: parent
-                            text: cell.inMonth ? cell.dayNum : cell.ghostNum
-                            color: cell.current ? Theme.inkOn(Theme.primary, Theme.primaryText, 3.0)
-                                : cell.inMonth ? Theme.inkOn(Theme.effectiveSurface, Theme.surfaceText)
-                                               : Theme.inkOn(Theme.effectiveSurface, Theme.surfaceVariantText, 3.0)
-                            opacity: cell.inMonth ? 1.0 : 0.4
-                            font.family: Theme.fontPrimary
-                            font.pixelSize: Theme.fontSm * root.s
-                            font.weight: cell.current ? Font.Bold : Font.Normal
-                        }
+            Repeater {
+                model: root.rows * 7
+                delegate: Item {
+                    id: cell
+                    required property int index
+                    readonly property int dayNum: index - root.offset + 1
+                    readonly property bool inMonth: dayNum >= 1 && dayNum <= root.monthLen
+                    readonly property bool current: inMonth && root.atHome && dayNum === root.today.getDate()
+                    width: dayGrid.width / 7
+                    height: 28 * root.s
+
+                    Rectangle {
+                        anchors.centerIn: parent
+                        width: 26 * root.s
+                        height: width
+                        radius: Theme.radiusWidget
+                        visible: cell.current
+                        color: Theme.primary
+                    }
+                    Text {
+                        anchors.centerIn: parent
+                        visible: cell.inMonth
+                        text: cell.dayNum
+                        color: cell.current ? Theme.inkOn(Theme.primary, Theme.primaryText, 3.0) : root.ink
+                        font.family: Theme.fontPrimary
+                        font.pixelSize: Theme.h5 * root.s
+                        font.weight: cell.current ? Font.Bold : Font.Normal
+                        font.features: ({ "tnum": 1 })
                     }
                 }
             }

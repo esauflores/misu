@@ -3,13 +3,13 @@
 
 [config]
 
-[templates.scroll]
-input_path = "~/.config/matugen/templates/scroll-colors.conf"
-output_path = "~/.local/state/rice/scroll-colors.conf"
+[templates.wm]
+input_path = "~/.config/matugen/templates/wm-colors.json"
+output_path = "~/.local/state/rice/wm-colors.json"
 
-[templates.kitty]
-input_path = "~/.config/matugen/templates/kitty-colors.conf"
-output_path = "~/.local/state/rice/kitty-colors.conf"
+[templates.foot]
+input_path = "~/.config/matugen/templates/foot-colors.ini"
+output_path = "~/.local/state/rice/foot-colors.ini"
 
 [templates.fuzzel]
 input_path = "~/.config/matugen/templates/fuzzel-colors.ini"
@@ -18,3 +18,11 @@ output_path = "~/.local/state/rice/fuzzel-colors.ini"
 [templates.misu]
 input_path = "~/.config/matugen/templates/misu-colors.json"
 output_path = "~/.local/state/rice/misu-colors.json"
+
+[templates.btop]
+input_path = "~/.config/matugen/templates/btop.theme"
+output_path = "~/.local/state/rice/btop.theme"
+
+[templates.zed]
+input_path = "~/.config/matugen/templates/zed-theme.json"
+output_path = "~/.local/state/rice/zed-theme.json"

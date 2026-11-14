@@ -1,6 +1,6 @@
 # Misu
 
-Misu is an Arch Linux rice: the scroll desktop, a Quickshell bar, shell,
+Misu is an Arch Linux rice: the wm desktop, a Quickshell bar, shell,
 applications and matugen color palette. The config files link back to this
 checkout, so edits apply immediately.
 
@@ -34,16 +34,24 @@ it: `ln -s /opt/misu ~/Projects/misu`.
 
 - `modules/`: `base` (network, audio, fonts), `intel` (drivers, firmware),
   `boot` (Limine, straight to the login screen; Snapper snapshots),
-  `greeter` (login screen), `wm` (scroll and the `misu-*` commands), `bar`
-  (Quickshell), `theme` (palette, GTK/Qt), `shell`, `apps`; each has its
-  `packages.txt`, `install.sh` and `uninstall.sh`
+  `greeter` (login screen), `wm` (built from `wm/`, config and the `misu-*` commands), `bar`
+  (Quickshell), `theme` (palette, GTK/Qt), `shell`, `apps`, and `dictate`
+  (live subtitles; optional, installed only with `sudo ./install.sh
+  dictate`); each has its `packages.txt`, `install.sh` and `uninstall.sh`
 - `test/vm.sh`: Arch test VM under KVM
 
-Test changes in the KVM VM before touching the laptop; see `AGENTS.md`. User
-setup after installation includes signing into Zen, VS Code, Claude and Codex
-and setting the git identity.
+Testing in the KVM VM is optional; changes can be tried on the laptop directly
+(see `AGENTS.md`). User setup after installation includes signing into Brave Origin (and
+switching on uBlock Origin at `brave://settings/extensions/v2`),
+Zed, Claude and Codex and setting the git identity.
 
 Every package install or update takes a btrfs snapshot before and after (the
 newest 10 are kept), and each shows up in the boot menu: press a key at boot,
 pick the one from before a bad update, then `sudo limine-snapper-restore` to
 make it the system again.
+
+Misu starts `wm --backend drm`, with foot as the terminal. Keyboard and
+startup settings are in `modules/wm/config.json`; Super+Ctrl+Shift+R regenerates
+the runtime config and reloads it. Matugen supplies wm and foot colours.
+Nightlight and compositor actions wm does not support are omitted.
+Agents use an independent wm seat; see `modules/wm/skills/misu-agent-seat`.

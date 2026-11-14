@@ -1,7 +1,8 @@
 zsh
-kitty
+foot
 starship
 zoxide
 fzf
+eza
 mise
 ttf-jetbrains-mono-nerd

@@ -51,7 +51,7 @@ Item {
             text: (root.label)
             color: root.on ? Theme.inverseOnSurface : root.ink
             font.family: Theme.fontPrimary
-            font.pixelSize: 9 * root.s
+            font.pixelSize: Theme.h6 * root.s
         }
     }
     HoverHandler { id: hh; enabled: root.act; cursorShape: Qt.PointingHandCursor }

@@ -38,16 +38,16 @@ run limine-update
 
 # Snapper's root config, written directly: archinstall already mounts the
 # @.snapshots subvolume at /.snapshots, which `snapper create-config` refuses.
-# Snapshots come from snap-pac only (no hourly timeline); the newest 10 are
-# kept. Skipped where / isn't btrfs.
+# Snapshots come from snap-pac only (no hourly timeline). Each pacman run makes
+# a pre/post pair; the newest 10 snapshots are kept (5 pairs), plus 5 important
+# ones (snap-pac marks kernel updates important). The limits are
+# re-applied on every run, so changing them here reaches existing installs.
+# Skipped where / isn't btrfs.
 if [[ ! -f /etc/snapper/configs/root && $(findmnt -no FSTYPE /) == btrfs ]]; then
   if (( DRY_RUN )); then echo "+ write /etc/snapper/configs/root and register it"
   else
     [[ -d /.snapshots ]] || btrfs subvolume create /.snapshots
-    sed -e 's/^NUMBER_LIMIT=.*/NUMBER_LIMIT="10"/' \
-        -e 's/^NUMBER_LIMIT_IMPORTANT=.*/NUMBER_LIMIT_IMPORTANT="5"/' \
-        -e 's/^TIMELINE_CREATE=.*/TIMELINE_CREATE="no"/' \
-        -e 's/^ALLOW_GROUPS=.*/ALLOW_GROUPS="wheel"/' \
+    sed -e 's/^ALLOW_GROUPS=.*/ALLOW_GROUPS="wheel"/' \
         -e 's/^SYNC_ACL=.*/SYNC_ACL="yes"/' \
         /usr/share/snapper/config-templates/default | install -Dm640 /dev/stdin /etc/snapper/configs/root
     sed -i 's/^SNAPPER_CONFIGS=.*/SNAPPER_CONFIGS="root"/' /etc/conf.d/snapper
@@ -55,5 +55,6 @@ if [[ ! -f /etc/snapper/configs/root && $(findmnt -no FSTYPE /) == btrfs ]]; the
   fi
 fi
 if [[ -f /etc/snapper/configs/root || $DRY_RUN == 1 ]]; then
+  run snapper -c root set-config NUMBER_LIMIT=10 NUMBER_LIMIT_IMPORTANT=5 TIMELINE_CREATE=no
   run systemctl enable --now snapper-cleanup.timer limine-snapper-sync.service
 fi

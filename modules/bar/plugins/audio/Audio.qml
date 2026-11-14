@@ -51,10 +51,43 @@ Singleton {
     }
     readonly property string btCodec: root.sinkIsBluez ? root.prop(root.sink, "api.bluez5.codec").toUpperCase() : ""
 
+    // A sound card's outputs all start with the card's long name ("500 Series
+    // Chipset Family … (HD Audio) Speaker"), so they read as one; its port's
+    // own name ("Speaker", "HDMI / DisplayPort 1") tells them apart.
     function nodeLabel(n) {
         if (!n) return "";
-        return n.description || n.nickname || n.name || "";
+        const port = root.prop(n, "device.profile.description").replace(/ Output$/, "");
+        return port || n.description || n.nickname || n.name || "";
     }
+    // A sound card's ports with nothing plugged in (an HDMI port without a
+    // screen, an empty headphone jack) still have nodes; only the card's
+    // routes say so ("available": "no"), and Quickshell doesn't show those,
+    // so pw-dump does. Keys are "<device id>:<card.profile.device>".
+    property var unplugged: ({})
+    function plugged(n) {
+        const p = n && n.properties ? n.properties : {};
+        return !root.unplugged[p["device.id"] + ":" + p["card.profile.device"]];
+    }
+    function refreshPorts() { portsProc.running = true; }
+    Process {
+        id: portsProc
+        command: ["sh", "-c", "pw-dump | jq -c '[.[] | .id as $d | .info.params.EnumRoute? // [] | .[] | select(.available == \"no\") | .devices[] | \"\\($d):\\(.)\"]'"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                const map = {};
+                try {
+                    for (const k of JSON.parse(this.text))
+                        map[k] = true;
+                } catch (e) {
+                    return;
+                }
+                root.unplugged = map;
+            }
+        }
+    }
+    onOutputsChanged: root.refreshPorts()
+    onInputsChanged: root.refreshPorts()
+
     function nodeIcon(n) {
         if (!n) return "speaker";
         if (root.isBluez(n)) return n.isSink ? "headphones" : "mic";
@@ -66,9 +99,19 @@ Singleton {
     function streamName(n) {
         return root.prop(n, "application.name") || root.nodeLabel(n);
     }
+    // The stream's own icon name, else its app's desktop entry (Zen's stream
+    // names no icon and runs as zen-bin; its entry's icon is zen-browser), else
+    // the binary's name. Quickshell scans the desktop entries only once
+    // `applications` is read, and heuristicLookup alone doesn't trigger it, so
+    // read it here: that loads them and re-runs the binding when they land.
     function streamIcon(n) {
-        const icon = root.prop(n, "application.icon-name") || root.prop(n, "application.process.binary")
-            || root.streamName(n).toLowerCase();
+        const bin = root.prop(n, "application.process.binary");
+        let icon = root.prop(n, "application.icon-name");
+        if (!icon) {
+            const entry = DesktopEntries.applications.values.length > 0
+                ? DesktopEntries.heuristicLookup(root.prop(n, "application.name") || bin.replace(/-bin$/, "")) : null;
+            icon = entry && entry.icon ? entry.icon : (bin || root.streamName(n).toLowerCase());
+        }
         return Quickshell.iconPath(icon, "application-x-executable");
     }
 

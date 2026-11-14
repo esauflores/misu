@@ -10,8 +10,7 @@ FUZZEL=@fuzzel
 dir=$(mktemp -d "${XDG_RUNTIME_DIR:?}/misu-share.XXXXXX") || exit 1
 trap 'rm -rf "$dir"' EXIT
 
-# The AI workspace's desk is nobody's screen.
-grep -v '^Monitor: HEADLESS-' >"$dir/options"
+cat >"$dir/options"
 mkfifo "$dir/answer" || exit 1
 exec 3<>"$dir/answer"      # read and write, so opening it doesn't wait for the bar
 
@@ -31,8 +30,11 @@ while IFS= read -r line; do
 done <"$dir/options"
 wait
 
+# wm hides Top-layer surfaces over a full-screen view. Use the Overlay-layer
+# fuzzel chooser there, since a successful bar IPC call cannot reveal its card.
+covered=$(wm msg tree 2>/dev/null | jq -r '.result | . as $t | first(.seats[] | select(.id == 0)).workspace as $ws | any(.workspaces[]; .id == $ws and any(.windows[]; .fullscreen))') || covered=false
 answer=$FUZZEL
-if qs -c misu ipc call share ask "$dir" >/dev/null 2>&1; then
+if [[ $covered != true ]] && qs -c misu ipc call share ask "$dir" >/dev/null 2>&1; then
   IFS= read -r -t 300 -u 3 answer || exit 0
 fi
 if [[ $answer == "$FUZZEL" ]]; then
