@@ -1,0 +1,45 @@
+{
+  "input": {
+    "keyboard": {"layout": "us", "repeat_rate": 25, "repeat_delay": 600},
+    "focus_follows_mouse": false
+  },
+  "colors": {
+    "seats": ["#f2f2f2", "#eb5c5c", "#5cb8f2", "#8cd973"],
+    "inactive": "#121318"
+  },
+  "bindings": {
+    "Mod+Return": "spawn kitty",
+    "Mod+space": "spawn fuzzel",
+    "Mod+w": "close",
+    "Mod+f": "fullscreen",
+
+    "Mod+Left": "focus left",
+    "Mod+Right": "focus right",
+    "Mod+Home": "focus first",
+    "Mod+End": "focus last",
+    "Mod+Shift+Left": "move left",
+    "Mod+Shift+Right": "move right",
+
+    "Mod+1": "workspace 1",
+    "Mod+2": "workspace 2",
+    "Mod+3": "workspace 3",
+    "Mod+4": "workspace 4",
+    "Mod+5": "workspace 5",
+    "Mod+6": "workspace 6",
+    "Mod+7": "workspace 7",
+    "Mod+8": "workspace 8",
+    "Mod+9": "workspace 9",
+    "Mod+Shift+1": "move-to-workspace 1 follow",
+    "Mod+Shift+2": "move-to-workspace 2 follow",
+    "Mod+Shift+3": "move-to-workspace 3 follow",
+    "Mod+Shift+4": "move-to-workspace 4 follow",
+    "Mod+Shift+5": "move-to-workspace 5 follow",
+    "Mod+Shift+6": "move-to-workspace 6 follow",
+    "Mod+Shift+7": "move-to-workspace 7 follow",
+    "Mod+Shift+8": "move-to-workspace 8 follow",
+    "Mod+Shift+9": "move-to-workspace 9 follow",
+
+    "Mod+Tab": "next-seat",
+    "Mod+Ctrl+Shift+r": "reload"
+  }
+}

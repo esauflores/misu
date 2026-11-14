@@ -1,0 +1,40 @@
+[package]
+name = "wm"
+version = "0.1.0"
+edition = "2024"
+description = "A scrolling Wayland compositor with several seats and per-workspace animations"
+license = "MIT"
+# tests/locker.rs is a helper of e2e, not a test target of its own.
+autotests = false
+
+[dependencies]
+png = "0.17"
+serde_json = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+xcursor = "0.3"
+
+# Pinned to the commit in references/smithay, so the code there matches.
+[dependencies.smithay]
+git = "https://github.com/Smithay/smithay.git"
+rev = "9ff2c5a410e91c592e19d6fb126c299308dce119"
+default-features = false
+features = ["backend_winit", "wayland_frontend", "desktop", "backend_drm", "backend_gbm", "backend_udev", "backend_libinput", "backend_session_libseat"]
+
+[dependencies.smithay-drm-extras]
+git = "https://github.com/Smithay/smithay.git"
+rev = "9ff2c5a410e91c592e19d6fb126c299308dce119"
+
+[dev-dependencies]
+# The e2e run's own session locker.
+wayland-client = "0.31"
+wayland-protocols = { version = "0.32", features = ["client", "staging"] }
+
+[profile.dev.package."*"]
+opt-level = 2
+
+[[test]]
+name = "unit"
+
+[[test]]
+name = "e2e"
