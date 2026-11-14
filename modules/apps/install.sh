@@ -20,8 +20,10 @@ as_user env HOME="$home" bash -c 'cd && mise install -y'
 # ~/.claude/skills, tracked in ~/.agents/.skill-lock.json. Re-running updates it.
 as_user env HOME="$home" bash -c 'cd && mise exec -- npx -y skills@latest add https://archify.si --skill archify --agent codex --agent claude-code --global --copy --yes'
 # Tools other packages pull in, kept out of the launcher: v4l-utils' Qt test
-# apps (ffmpeg needs v4l-utils) and qt6ct, which the theme module configures.
-hidden_apps=(qv4l2 qvidcap qt6ct)
+# apps (ffmpeg needs v4l-utils), qt6ct, which the theme module configures, and
+# foot's client and server entries (Misu runs plain foot); and the boot
+# module's snapshot rollback, run from a terminal when needed.
+hidden_apps=(qv4l2 qvidcap qt6ct footclient foot-server limine-snapper-restore)
 for app in "${hidden_apps[@]}"; do link "$M/apps/hidden.desktop" "$home/.local/share/applications/$app.desktop"; done
 # Zed runs on Wayland (wm shows it only its launcher's seat); older installs
 # linked an entry over the system one that ran it on X11.

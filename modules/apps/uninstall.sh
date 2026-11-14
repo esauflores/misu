@@ -6,7 +6,7 @@ as_user env HOME="$home" bash -c 'cd && mise exec -- npx -y skills@latest remove
 unlink_ours "$home/.config/herdr/config.toml"
 unlink_ours "$home/.config/mimeapps.list"
 unlink_ours "$home/.config/mise/config.toml"
-for app in qv4l2 qvidcap qt6ct; do unlink_ours "$home/.local/share/applications/$app.desktop"; done
+for app in qv4l2 qvidcap qt6ct footclient foot-server limine-snapper-restore; do unlink_ours "$home/.local/share/applications/$app.desktop"; done
 unlink_ours "$home/.local/share/applications/dev.zed.Zed.desktop"
 # Zed's theme link; its settings.json is the user's, Misu's merged keys stay.
 if [[ -L $home/.config/zed/themes/misu.json ]]; then as_user rm "$home/.config/zed/themes/misu.json"; fi
