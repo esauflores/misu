@@ -250,6 +250,7 @@ impl State {
                     .arg("-c")
                     .arg(&command)
                     .env(LAUNCH_ENV, seat.to_string())
+                    .env("XDG_ACTIVATION_TOKEN", self.spawn_token(seat))
                     .spawn();
                 match spawned {
                     // Reaped when it exits, so it leaves no zombie.

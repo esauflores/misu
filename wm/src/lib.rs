@@ -3,6 +3,7 @@
 //! `tests/` can reach it. The command-line options and the config file are
 //! below.
 
+pub mod activation;
 pub mod bindings;
 pub mod capture;
 pub mod clipboard;

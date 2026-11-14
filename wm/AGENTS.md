@@ -100,6 +100,7 @@ mise install                                   # Rust, pinned in mise.toml
 | `src/settings.rs` | `input`: xkb, repeat, libinput options, focus follows mouse |
 | `src/screens.rs` | `screens`: modes, order, off, laptop panels |
 | `src/clipboard.rs` | primary selection, wlr/ext data control |
+| `src/activation.rs` | xdg-activation: per-seat tokens, `State::activate` |
 | `src/idle.rs` | ext-idle-notify, per seat |
 | `src/lock.rs` | ext-session-lock: lock surfaces, input and drawing while locked |
 | `src/xwayland.rs` | xwayland-satellite: display, `DISPLAY`, restarts |
@@ -253,8 +254,17 @@ by Misu's install.sh):
   motion, button and axis input (devices and `wm msg`), per seat. The e2e
   run starts swayidle on each seat and checks seat 0 idles while seat 1
   moves, then resumes. No idle inhibit yet (Misu never idles out).
-- Next:
-  xdg-activation, layout commands (float toggle, width presets, focus
+- xdg-activation (done): `activation.rs`. A client token is valid if its
+  serial's seat has keyboard focus on the asking client since that serial
+  (`token_seat`); the seat goes in the token's user data (`TokenSeat`).
+  `Action::Spawn` sets `XDG_ACTIVATION_TOKEN` from `spawn_token` (expired
+  tokens dropped there). `request_activation` (10 s, not while locked)
+  calls `State::activate` (go to the window's workspace, or take it from a
+  floating screen, and focus it revealed), except for a window mapped after
+  the token (`MappedAt`): a launch's late self-activation would pull the
+  seat back. The e2e run relaunches a single-instance GTK app from another
+  workspace and checks a token-less present() moves nothing.
+- Next: layout commands (float toggle, width presets, focus
   previous, overview, jump), agent-seat commands (keys, typing, scroll,
   right click, focus a window), config includes. Later: gamma
   (`wlr-gamma-control`, for wlsunset; not needed yet).

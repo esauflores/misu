@@ -518,6 +518,7 @@ fn nested_in_headless_scroll() {
     x11_apps(&wm, &dir);
     clipboards(&wm, &runtime);
     idle_per_seat(&wm, &dir, &runtime);
+    activation(&wm, &dir);
     session_lock(&wm, &dir, &runtime);
 
     // Errors come back as errors.
@@ -1051,3 +1052,72 @@ fn idle_per_seat(wm: &Wm, dir: &Path, runtime: &Path) {
     wm.msg("seat 0 pointer 30 30");
     wait_for("seat 0 back from idle", || file("back0").exists().then_some(()));
 }
+
+/// xdg-activation: launching a single-instance GTK app again, from another
+/// workspace, brings seat 0 back to its window (the second launch hands
+/// the first wm's token); seat 1 doesn't move. The app presenting itself
+/// with no fresh input moves nothing.
+fn activation(wm: &Wm, dir: &Path) {
+    let gtk = Command::new("python3")
+        .args(["-c", "import gi; gi.require_version('Gtk', '4.0'); from gi.repository import Gtk"])
+        .status()
+        .is_ok_and(|s| s.success());
+    if !gtk || std::env::var_os("DBUS_SESSION_BUS_ADDRESS").is_none() {
+        eprintln!("activation: skipped, needs python3 with GTK 4 and a session bus");
+        return;
+    }
+    let script = dir.join("activate.py");
+    let id = format!("org.wm.e2e.activate{}", std::process::id());
+    fs::write(
+        &script,
+        format!(
+            r#"import os, signal, gi
+gi.require_version("Gtk", "4.0")
+from gi.repository import Gtk, GLib
+app = Gtk.Application(application_id={id:?})
+def activate(app):
+    if app.get_windows():
+        app.get_windows()[0].present()
+        return
+    window = Gtk.ApplicationWindow(application=app, title="e2e-activate")
+    window.present()
+    open({pid:?}, "w").write(str(os.getpid()))
+    GLib.unix_signal_add(GLib.PRIORITY_DEFAULT, signal.SIGUSR1, lambda: window.present() or True)
+app.connect("activate", activate)
+app.run([])
+"#,
+            pid = dir.join("activate.pid").display().to_string()
+        ),
+    )
+    .unwrap();
+    let run = format!("env GDK_BACKEND=wayland python3 {}", script.display());
+    wm.msg(&format!("seat 0 spawn {run}"));
+    let find = |tree: &Value| -> Option<Value> {
+        tree["workspaces"].as_array().unwrap().iter()
+            .flat_map(|ws| ws["windows"].as_array().unwrap().iter())
+            .find(|w| w["title"] == "e2e-activate").cloned()
+    };
+    let window = wait_for("the app's window", || find(&wm.tree()));
+    let (id, home) = (window["id"].as_u64(), window["workspace"].clone());
+    wait_for("seat 0 on it", || (focus(&wm.tree(), 0) == id).then_some(()));
+    let theirs = |tree: &Value| (seat(tree, 1)["workspace"].clone(), focus(tree, 1));
+    let before = theirs(&wm.tree());
+
+    wm.msg("seat 0 workspace 6");
+    assert_ne!(seat(&wm.tree(), 0)["workspace"], home);
+    wm.msg(&format!("seat 0 spawn {run}"));
+    wait_for("seat 0 brought back to the window", || {
+        let tree = wm.tree();
+        (seat(&tree, 0)["workspace"] == home && focus(&tree, 0) == id).then_some(())
+    });
+    assert_eq!(theirs(&wm.tree()), before, "seat 1 didn't move");
+
+    wm.msg("seat 0 workspace 6");
+    let away = seat(&wm.tree(), 0)["workspace"].clone();
+    let pid = fs::read_to_string(dir.join("activate.pid")).unwrap();
+    Command::new("kill").args(["-USR1", pid.trim()]).status().unwrap();
+    sleep(Duration::from_millis(700));
+    assert_eq!(seat(&wm.tree(), 0)["workspace"], away, "no input behind it: nothing moves");
+    Command::new("kill").arg(pid.trim()).status().unwrap();
+}
+

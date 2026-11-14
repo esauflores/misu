@@ -131,6 +131,8 @@ pub struct State {
     /// Kept alive for its wl_output and xdg-output globals.
     pub _output_manager_state: OutputManagerState,
     pub data_device_state: DataDeviceState,
+    /// xdg-activation tokens (see `activation.rs`).
+    pub activation: smithay::wayland::xdg_activation::XdgActivationState,
     /// Idle notify, per seat (see `idle.rs`).
     pub idle: smithay::wayland::idle_notify::IdleNotifierState<Self>,
     /// Primary selection and data control (see `clipboard.rs`).
@@ -174,6 +176,7 @@ impl State {
             _output_manager_state: OutputManagerState::new_with_xdg_output::<Self>(&dh),
             data_device_state: DataDeviceState::new::<Self>(&dh),
             clipboard: crate::clipboard::Clipboard::new(&dh),
+            activation: smithay::wayland::xdg_activation::XdgActivationState::new::<Self>(&dh),
             idle: smithay::wayland::idle_notify::IdleNotifierState::new(&dh, event_loop.handle()),
             popups: PopupManager::default(),
             display_handle: dh.clone(),
@@ -507,6 +510,7 @@ impl State {
     /// instead, focused by whoever focuses its parent.
     pub fn add_window(&mut self, window: Window) {
         let now = Instant::now();
+        window.user_data().insert_if_missing(|| crate::activation::MappedAt(now));
         self.list_toplevel(&window);
         if let Some(parent) = self.parent_of(&window)
             && let Some(ws) = self.workspace_of(&parent)
@@ -696,7 +700,7 @@ impl State {
 
     /// Put `seat` on `target`. A screen it looks at shows it there; leaving
     /// for another screen, it looks at that one if nobody does.
-    fn go_to(&mut self, seat: usize, target: WorkspaceId) {
+    pub(crate) fn go_to(&mut self, seat: usize, target: WorkspaceId) {
         self.seats[seat].workspace = target;
         self.settle_viewers();
         let ws = &self.workspaces[&target];

@@ -102,6 +102,12 @@ Idle daemons (swayidle) get each seat's idle time (`ext-idle-notify`):
 input on an agent's seat doesn't keep yours awake. swayidle's
 `before-sleep` comes from logind, and the session lock does the locking.
 
+An app can bring a window forward (`xdg-activation`: a link clicked in a
+terminal raises the browser) for the seat whose input asked: that seat goes
+to the window and focuses it; other seats don't move. Without recent input
+behind it, the request does nothing. What a seat spawns gets a token
+(`XDG_ACTIVATION_TOKEN`), so relaunching a running app brings it back.
+
 Each seat on the shown workspace has its pointer drawn with a real cursor:
 the app's (its own surface, or a shape it names), else the theme's arrow,
 from `XCURSOR_THEME` and `XCURSOR_SIZE`. Seat 0 has the theme as it is;
