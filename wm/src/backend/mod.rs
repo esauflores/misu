@@ -69,6 +69,48 @@ impl FrameStats {
     }
 }
 
+/// When to draw a screen's next frame while it flips every refresh: just
+/// before the refresh, leaving the time a draw takes (the slowest recent one)
+/// plus a margin, so app updates that come during the refresh still make it.
+/// Each frame that misses its refresh anyway leaves 1 ms more, given back
+/// after 10 s without one.
+#[derive(Debug, Default)]
+pub struct DrawClock {
+    draw: Duration,
+    extra: Duration,
+    clean: u32,
+}
+
+impl DrawClock {
+    const MARGIN: Duration = Duration::from_micros(1500);
+    const STEP: Duration = Duration::from_millis(1);
+    const FORGIVE: u32 = 600;
+
+    /// A frame took `took` to draw, from building it to the GPU finishing.
+    pub fn drew(&mut self, took: Duration) {
+        self.draw = took.max(self.draw.mul_f32(0.95));
+    }
+
+    /// A frame drawn for the next refresh showed on it, or `missed` it.
+    pub fn shown(&mut self, missed: bool) {
+        if missed {
+            self.extra += Self::STEP;
+            self.clean = 0;
+        } else {
+            self.clean += 1;
+            if self.clean >= Self::FORGIVE {
+                self.clean = 0;
+                self.extra = self.extra.saturating_sub(Self::STEP);
+            }
+        }
+    }
+
+    /// The time left for drawing before a refresh, at most half of it.
+    pub fn budget(&self, period: Duration) -> Duration {
+        (self.draw + Self::MARGIN + self.extra).clamp(Duration::from_millis(2), period / 2)
+    }
+}
+
 /// The render node `renderer` draws on, for dmabuf feedback.
 fn render_node(renderer: &GlesRenderer) -> Option<DrmNode> {
     EGLDevice::device_for_display(renderer.egl_context().display())

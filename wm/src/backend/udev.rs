@@ -69,6 +69,11 @@ struct Surface {
     sequence: Option<u32>,
     /// When this screen's last page flip sent its windows frame callbacks.
     flipped_at: Option<Instant>,
+    /// When the queued frame was queued, and when to draw the next one
+    /// (`DrawClock`): unset, at once.
+    queued_at: Option<Instant>,
+    draw_at: Option<Instant>,
+    clock: super::DrawClock,
 }
 struct Gpu {
     name: String,
@@ -213,6 +218,8 @@ pub fn init(event_loop: &mut EventLoop<'static, State>, state: &mut State) -> Re
                             }
                             surface.compositor.reset_buffers();
                             surface.next_frame = Instant::now();
+                            surface.draw_at = None;
+                            surface.queued_at = None;
                         }
                     }
                     let devices = hw.devices.clone();
@@ -462,9 +469,37 @@ impl Hardware {
                             // ahead of the next flip, instead of at a timer
                             // drifting against the screen.
                             let screen = surface.screen;
-                            surface.flipped_at = Some(Instant::now());
-                            if let Some(output) = state.screens.get(&screen).map(|screen| screen.output.clone()) {
+                            let now = Instant::now();
+                            let output = state.screens.get(&screen).map(|screen| screen.output.clone());
+                            let period = output
+                                .as_ref()
+                                .and_then(|output| output.current_mode())
+                                .map_or(Duration::from_millis(16), |mode| Duration::from_secs_f64(1000.0 / mode.refresh.max(1) as f64));
+                            // A frame queued before the refresh after the last
+                            // flip was meant for it: a gap of more is a miss.
+                            let aimed = surface.queued_at.take().zip(surface.flipped_at).is_some_and(|(queued, flipped)| queued < flipped + period);
+                            if aimed && let Some(gap) = gap {
+                                surface.clock.shown(gap > 1);
+                            }
+                            surface.flipped_at = Some(now);
+                            if let Some(output) = output {
                                 state.send_frames(&output, |shown| shown == Some(screen));
+                            }
+                            // The next frame waits for the updates this
+                            // refresh brings, then makes the next flip.
+                            let at = now + period - surface.clock.budget(period);
+                            surface.draw_at = Some(at);
+                            let shared = shared.clone();
+                            let timer = handle.insert_source(Timer::from_deadline(at), move |_, _, state| {
+                                let mut hw = shared.borrow_mut();
+                                if hw.active {
+                                    hw.render(state);
+                                }
+                                TimeoutAction::Drop
+                            });
+                            if let Err(err) = timer {
+                                tracing::warn!(?err, "draw timer failed");
+                                surface.draw_at = None;
                             }
                         }
                     }
@@ -535,12 +570,15 @@ impl Hardware {
         }
         for gpu in self.gpus.values_mut() {
             for surface in gpu.surfaces.values_mut() {
-                // Draw whenever no flip is outstanding: on a commit, input or
-                // the flip's completion, and at least once a refresh while
-                // something animates (the poll).
-                if surface.pending {
+                // Draw whenever no flip is outstanding and its time has come
+                // (`draw_at`, while flipping): on a commit, input, that time,
+                // and at least once a refresh while something animates (the
+                // poll).
+                if surface.pending || surface.draw_at.is_some_and(|at| now < at) {
                     continue;
                 }
+                surface.draw_at = None;
+                let started = Instant::now();
                 let output = state.screens[&surface.screen].output.clone();
                 let refresh = output.current_mode().map_or(60_000, |mode| mode.refresh).max(1);
                 surface.next_frame = now + Duration::from_secs_f64(1000.0 / refresh as f64);
@@ -569,6 +607,8 @@ impl Hardware {
                     Ok(()) => {
                         surface.pending = true;
                         surface.committed_at = state.committed_at.take();
+                        surface.queued_at = Some(Instant::now());
+                        surface.clock.drew(started.elapsed());
                         tracing::trace!(screen = surface.screen.0, "DRM frame queued");
                     }
                     Err(err) => tracing::warn!(?err, "DRM submit failed"),
@@ -753,6 +793,9 @@ impl Gpu {
                 committed_at: None,
                 sequence: None,
                 flipped_at: None,
+                queued_at: None,
+                draw_at: None,
+                clock: Default::default(),
             },
         );
         Ok(())

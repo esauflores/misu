@@ -1090,3 +1090,39 @@ mod dmabuf {
         support.state.destroy_global::<State>(&dh, live);
     }
 }
+
+mod draw_clock {
+    use std::time::Duration;
+    use wm::backend::DrawClock;
+
+    const PERIOD: Duration = Duration::from_micros(16_650);
+    const MS: fn(u64) -> Duration = Duration::from_millis;
+
+    #[test]
+    fn leaves_the_slowest_recent_draw_and_a_margin() {
+        let mut clock = DrawClock::default();
+        assert_eq!(clock.budget(PERIOD), MS(2), "never less than 2 ms");
+        clock.drew(MS(3));
+        clock.drew(MS(1));
+        // 3 ms decayed once (2.85 ms), plus the 1.5 ms margin
+        assert_eq!(clock.budget(PERIOD), Duration::from_micros(4350));
+        clock.drew(MS(30));
+        assert_eq!(clock.budget(PERIOD), PERIOD / 2, "at most half a refresh");
+    }
+
+    #[test]
+    fn misses_leave_more_until_ten_seconds_go_clean() {
+        let mut clock = DrawClock::default();
+        clock.drew(MS(2));
+        let base = clock.budget(PERIOD);
+        clock.shown(true);
+        clock.shown(true);
+        assert_eq!(clock.budget(PERIOD), base + MS(2));
+        for _ in 0..599 {
+            clock.shown(false);
+        }
+        assert_eq!(clock.budget(PERIOD), base + MS(2));
+        clock.shown(false);
+        assert_eq!(clock.budget(PERIOD), base + MS(1));
+    }
+}
