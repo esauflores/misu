@@ -81,6 +81,8 @@ pub struct State {
     pub socket_name: OsString,
     pub display_handle: DisplayHandle,
     pub loop_signal: LoopSignal,
+    /// Quitting to be started again (`restart`, `RESTART_EXIT`).
+    pub restart: bool,
     pub loop_handle: LoopHandle<'static, Self>,
     pub dmabuf: crate::backend::dmabuf::DmabufSupport,
 
@@ -159,6 +161,7 @@ impl State {
             start_time: Instant::now(),
             socket_name: Self::listen(display, event_loop),
             loop_signal: event_loop.get_signal(),
+            restart: false,
             loop_handle: event_loop.handle(),
             dmabuf: crate::backend::dmabuf::DmabufSupport::default(),
             screens: HashMap::new(),

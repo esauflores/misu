@@ -13,5 +13,12 @@ export XCURSOR_THEME=Bibata-Modern-Ice XCURSOR_SIZE=20
 # The login's user bus (/run/user/<uid>/bus), the one systemd's user services
 # (gnome-keyring's Secret Service, the portals) are on, not a private one.
 export XDG_CURRENT_DESKTOP=wm XDG_SESSION_DESKTOP=wm XDG_SESSION_TYPE=wayland
-config=$(misu-wm-config) || exit 1
-exec wm --backend drm --config "$config"
+# `wm msg restart` (Super+Ctrl+Shift+Q) exits 75: start wm again (a new
+# build, the config regenerated) without going back to the greeter. Apps
+# close either way; startup brings the bar and the rest back.
+while :; do
+  config=$(misu-wm-config) || exit 1
+  wm --backend drm --config "$config"
+  status=$?
+  [[ $status == 75 ]] || exit "$status"
+done

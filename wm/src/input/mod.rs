@@ -52,6 +52,8 @@ pub enum Action {
     /// Read the config file again (bindings, modifier, devices).
     Reload,
     Quit,
+    /// Quit with `RESTART_EXIT`, for the session to start wm again.
+    Restart,
 }
 
 /// Keep physical-device motion inside its seat's screen, including tiny modes.
@@ -328,6 +330,10 @@ impl State {
             }
             Action::Reload => self.reload(),
             Action::Quit => self.loop_signal.stop(),
+            Action::Restart => {
+                self.restart = true;
+                self.loop_signal.stop();
+            }
         }
     }
 }

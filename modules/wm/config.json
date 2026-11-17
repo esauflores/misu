@@ -54,6 +54,7 @@
     "Mod+Shift+9": "move-to-workspace 9 follow",
     "Mod+Tab": null,
     "Mod+Ctrl+Shift+r": "spawn misu-wm-config >/dev/null && wm msg reload",
+    "Mod+Ctrl+Shift+q": "restart",
     "Mod+Shift+Return": "spawn foot -e herdr",
     "Mod+Shift+e": "spawn nautilus",
     "Mod+Shift+b": "spawn gtk-launch \"$(xdg-mime query default x-scheme-handler/https)\"",

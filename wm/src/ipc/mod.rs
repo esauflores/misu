@@ -92,6 +92,8 @@ pub const HELP: &str = "[seat N] COMMAND, where COMMAND is one of:
   screen-remove N           unplug screen N: it floats, keeping its workspaces
   screen-add N              plug it back
   quit
+  restart                   quit with status 75, for a session that starts
+                            wm again on it (apps close, as with quit)
 `seat N` (from 0) picks the seat; without it, the one the host drives.";
 
 #[derive(Debug, Clone, PartialEq)]
@@ -232,6 +234,7 @@ pub fn parse(line: &str) -> Result<Request, String> {
             if name == "screen-remove" { Command::ScreenRemove(id) } else { Command::ScreenAdd(id) }
         }
         "quit" => Command::Action(Action::Quit),
+        "restart" => Command::Action(Action::Restart),
         _ => return Err(format!("unknown command: {}", words.join(" "))),
     };
     Ok(Request { seat, command })

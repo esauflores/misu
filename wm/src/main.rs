@@ -1,7 +1,7 @@
 use smithay::reexports::{calloop::EventLoop, wayland_server::Display};
 use wm::{Command, Config, input::Action, ipc, state::State};
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<std::process::ExitCode, Box<dyn std::error::Error>> {
     let config = match Config::from_args(std::env::args().skip(1)) {
         Ok(Command::Run(config)) => *config,
         Ok(Command::Msg(words)) => std::process::exit(ipc::client(&words)),
@@ -54,7 +54,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let _ = state.display_handle.flush_clients();
     })?;
     let _ = std::fs::remove_file(&ipc_path);
-    Ok(())
+    Ok(std::process::ExitCode::from(if state.restart { wm::RESTART_EXIT } else { 0 }))
 }
 
 fn init_logging() {

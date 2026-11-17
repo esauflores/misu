@@ -43,7 +43,9 @@ sudo ./uninstall.sh [--packages] [mod]   # --packages also removes their package
   and starts the bar, polkit, cliphist and swayidle (lock before sleep).
   `misu-wm-config` merges the tracked config with matugen's `wm-colors.json`
   into `~/.local/state/rice/wm-config.json`; the session reads that file.
-  Super+Ctrl+Shift+R regenerates it and reloads wm. Nightlight is disabled
+  Super+Ctrl+Shift+R regenerates it and reloads wm; Super+Ctrl+Shift+Q
+  (`wm msg restart`, exit 75) has `misu-session` start wm again, a new build
+  included, without the greeter (apps close). Nightlight is disabled
   until wm supports gamma control. Unsupported layout bindings are omitted.
   fuzzel, the session entry and `misu-*` commands live here too.
   Seats are independent users, with their own pointer, keyboard focus,

@@ -52,6 +52,7 @@ make it the system again.
 
 Misu starts `wm --backend drm`, with foot as the terminal. Keyboard and
 startup settings are in `modules/wm/config.json`; Super+Ctrl+Shift+R regenerates
-the runtime config and reloads it. Matugen supplies wm and foot colours.
+the runtime config and reloads it, and Super+Ctrl+Shift+Q restarts wm (a new
+build) without logging out; open apps close, the bar comes back. Matugen supplies wm and foot colours.
 Nightlight and compositor actions wm does not support are omitted.
 Agents use an independent wm seat; see `modules/wm/skills/misu-agent-seat`.

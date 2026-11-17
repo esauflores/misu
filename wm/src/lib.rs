@@ -25,6 +25,9 @@ use crate::{
 
 /// The default configuration: wm's own bindings. A config file's bindings
 /// go over these (`null` unbinds a key).
+/// wm's exit status after `restart`: the session starts it again.
+pub const RESTART_EXIT: u8 = 75;
+
 pub const DEFAULT_CONFIG: &str = include_str!("../config.json");
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

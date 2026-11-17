@@ -61,7 +61,8 @@ Keys are bound in a JSON config file, `~/.config/wm/config.json` (or
 Mod+Return a terminal, Mod+f full screen, Mod+Left/Right focus, Mod+Shift+Left/Right move,
 Mod+1…9 workspaces, Mod+Shift+1…9 take the window there, Mod+Tab the next
 seat (nested), Mod+Ctrl+Shift+R reload. Nothing quits
-wm from the keyboard: `wm msg quit` does. `Mod` is
+wm from the keyboard: `wm msg quit` does, and `wm msg restart` quits with
+status 75 for a session script to start wm again. `Mod` is
 Alt nested (the host keeps Super) and Super on a VT; `--mod` or
 `"modifier"` changes it.
 

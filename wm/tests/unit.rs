@@ -590,7 +590,8 @@ mod ipc {
         assert_eq!(ok("reload").command, Command::Action(Action::Reload));
         assert_eq!(ok("animations off").command, Command::Action(Action::Animations(Some(false))));
         assert_eq!(ok("animations").command, Command::Action(Action::Animations(None)));
-        assert_eq!(ok("spawn kitty -e  htop").command, Command::Action(Action::Spawn("kitty -e htop".into())));
+        assert_eq!(ok("spawn foot -e  htop").command, Command::Action(Action::Spawn("foot -e htop".into())));
+        assert_eq!(ok("restart").command, Command::Action(Action::Restart));
         assert_eq!(ok("pointer 10 20.5").command, Command::Pointer(10.0, 20.5));
         assert_eq!(ok("click").command, Command::Click(Button::Left, None, 1));
         assert_eq!(ok("click 1 2").command, Command::Click(Button::Left, Some((1.0, 2.0)), 1));
