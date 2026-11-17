@@ -137,6 +137,11 @@ impl<W: Tile> Workspace<W> {
         self.columns.is_empty() && self.floats.is_empty()
     }
 
+    /// The part of the screen its windows are laid out in.
+    pub fn area(&self) -> Rectangle<i32, Logical> {
+        self.area
+    }
+
     /// The columns' windows, then the floating ones.
     pub fn windows(&self) -> impl Iterator<Item = &W> {
         self.columns.iter().map(|c| &c.window).chain(self.floats.iter().map(|f| &f.window))

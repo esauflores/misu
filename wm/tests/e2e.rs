@@ -670,16 +670,18 @@ ShellRoot {
             (seat(&wm.tree(), 0)["layer_focus"] == "launcher").then_some(())
         });
         assert_eq!(seat(&wm.tree(), 1)["layer_focus"], Value::Null, "not seat 1's");
-        // A click on a window (near its top, clear of fuzzel in the middle)
-        // focuses it but leaves fuzzel the keyboard.
+        // A click on the window in view (near its top, clear of fuzzel in
+        // the middle) lands on it and leaves fuzzel the keyboard. Columns
+        // are the screen's width, so it is the focused one: clicking another
+        // window is the focus-follows-mouse step's, with a dialog.
         let tree = wm.tree();
-        let (cx, _) = centre(&tree, 0, &windows(&tree, 1)[1]);
-        let top = windows(&tree, 1)[1]["y"].as_i64().unwrap() + 20;
+        let (cx, _) = centre(&tree, 0, &windows(&tree, 1)[2]);
+        let top = windows(&tree, 1)[2]["y"].as_i64().unwrap() + 20;
         wm.msg(&format!("seat 0 click {cx} {top}"));
         let tree = wm.tree();
-        assert_eq!(seat(&tree, 0)["pointer"]["over"], windows(&tree, 1)[1]["id"], "the click was on the window");
+        assert_eq!(seat(&tree, 0)["pointer"]["over"], windows(&tree, 1)[2]["id"], "the click was on the window");
+        assert_eq!(focus(&tree, 0), windows(&tree, 1)[2]["id"].as_u64(), "and it has the focus");
         assert_eq!(seat(&tree, 0)["layer_focus"], "launcher");
-        wm.msg("seat 0 focus right");
         shot("layers.png");
         kill(&launcher);
         wait_for("the keyboard back on the window", || {
@@ -715,6 +717,48 @@ ShellRoot {
     let window = windows(&tree, 1).into_iter().find(|w| w["id"] == focused).unwrap();
     assert_eq!(window["fullscreen"], false);
     assert!(window["y"].as_i64().unwrap() > 30, "below the bar again: {window}");
+
+    // A click-through bar on the right (Misu's rail leaves its edge so): the
+    // next column starts at the area's edge, under it. Its border must not
+    // show in the gap, nor the column take the pointer past the area.
+    let side = dir.join("side.qml");
+    fs::write(
+        &side,
+        r#"import Quickshell
+import QtQuick
+ShellRoot {
+    PanelWindow {
+        anchors { top: true; bottom: true; right: true }
+        implicitWidth: 30
+        color: "transparent"
+        mask: Region {}
+    }
+}
+"#,
+    )
+    .unwrap();
+    let side_bar = spawn_tracked(wm, 0, dir, "side-bar", &format!("quickshell -p {}", side.display()));
+    let right = wait_for("the side bar's room", || {
+        let area = wm.tree()["screens"][0]["area"].clone();
+        (area["width"].as_i64()? == full["width"].as_i64()? - 30).then(|| area["x"].as_i64().unwrap() + area["width"].as_i64().unwrap())
+    });
+    wm.msg("seat 0 focus left");
+    let next = windows(&wm.tree(), 1).into_iter().find(|w| w["id"] == focused).unwrap();
+    wait_for("the next column at the area's edge", || {
+        let tree = wm.tree();
+        let next = windows(&tree, 1).into_iter().find(|w| w["id"] == focused)?;
+        ((next["x"].as_f64()? - view(&tree, 0)).round() as i64 == right).then_some(())
+    });
+    sleep(Duration::from_millis(400));
+    wm.msg(&format!("seat 0 pointer {} 300", right + 15));
+    assert_ne!(seat(&wm.tree(), 0)["pointer"]["over"], next["id"], "past the area, the next column takes no pointer");
+    let png = dir.join("neighbour.png");
+    wm.msg(&format!("seat 0 screenshot {}", png.display()));
+    let (w, pixels) = read_png(&png);
+    let at = |x: i64| pixels[(300 * w + x as usize) * 4..(300 * w + x as usize) * 4 + 3].to_vec();
+    assert_eq!(at(right - 1), at(right - 6), "no border of the next column in the gap");
+    wm.msg("seat 0 focus right");
+    kill(&side_bar);
 
     kill(&bar);
     wait_for("the bar's room back", || (wm.tree()["screens"][0]["area"] == full).then_some(()));

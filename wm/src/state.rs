@@ -526,14 +526,23 @@ impl State {
         }
         let ws = &self.workspaces[&self.seats[seat].workspace];
         let placed: Vec<_> = ws.positions(seat, Instant::now()).collect();
+        // Past the area, only a full-screen window or a menu: a neighbour
+        // column starts at its edge, where the bar may not take the pointer,
+        // but a window's menus can reach over the bar.
+        let in_area = ws.area().to_f64().contains(pos);
         placed.into_iter().rev().find_map(|(window, loc)| {
             // Windows are placed by their geometry; their surfaces start
             // before it (client-side shadows).
             let render_loc = loc - window.geometry().loc;
             let mut bbox = window.bbox_with_popups();
             bbox.loc += render_loc;
-            (bbox.to_f64().contains(pos) && window.is_in_input_region(&(pos - render_loc.to_f64())))
-                .then(|| (window.clone(), render_loc))
+            let at = pos - render_loc.to_f64();
+            let hit = if in_area || ws.is_fullscreen(window) {
+                window.is_in_input_region(&at)
+            } else {
+                window.surface_under(at, WindowSurfaceType::POPUP).is_some()
+            };
+            (bbox.to_f64().contains(pos) && hit).then(|| (window.clone(), render_loc))
         })
     }
 

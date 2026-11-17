@@ -171,7 +171,9 @@ impl State {
             // full-screen one, a dialog) covers all of them.
             let (popups, own) = window_surfaces(renderer, &window, geo, alpha, fullscreen);
             elements.extend(popups.into_iter().map(grow));
-            if !fullscreen {
+            // Only for a window in the area: a neighbour's border would lie
+            // in the gap at its edge.
+            if !fullscreen && geo.overlaps(self.workspaces[&ws].area()) {
                 elements.extend(self.border_of(renderer, &window, loc, alpha).map(|b| grow(WindowElement::Border(b))));
             }
             elements.extend(own.into_iter().map(grow));
