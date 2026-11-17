@@ -13,6 +13,16 @@ if [[ ! -s /etc/kernel/cmdline ]]; then
   else install -d /etc/kernel; printf '%s\n' "$cmdline" >/etc/kernel/cmdline; fi
 fi
 
+# A quiet boot: no kernel or service messages on the console, where they'd
+# show again between the login and the session's first frame.
+quiet_boot=(quiet loglevel=3 systemd.show_status=auto rd.udev.log_level=3)
+for word in "${quiet_boot[@]}"; do
+  if [[ -s /etc/kernel/cmdline ]] && ! grep -qw -- "$word" /etc/kernel/cmdline; then
+    if (( DRY_RUN )); then echo "+ add $word to /etc/kernel/cmdline"
+    else sed -i "1s/\$/ $word/" /etc/kernel/cmdline; fi
+  fi
+done
+
 esp=$(bootctl --print-esp-path 2>/dev/null || echo /boot)
 conf=$esp/limine.conf
 

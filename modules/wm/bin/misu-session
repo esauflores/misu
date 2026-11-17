@@ -13,6 +13,12 @@ export XCURSOR_THEME=Bibata-Modern-Ice XCURSOR_SIZE=20
 # The login's user bus (/run/user/<uid>/bus), the one systemd's user services
 # (gnome-keyring's Secret Service, the portals) are on, not a private one.
 export XDG_CURRENT_DESKTOP=wm XDG_SESSION_DESKTOP=wm XDG_SESSION_TYPE=wayland
+# The session runs on the greeter's VT, which shows until wm's first frame:
+# clear it (boot messages left there) and hide its cursor, then send wm's log
+# and its apps' to the journal (`journalctl -t misu-session`), not the VT.
+printf '\033c\033[?25l'
+exec > >(exec systemd-cat -t misu-session) 2>&1
+
 # `wm msg restart` (Super+Ctrl+Shift+Q) exits 75: start wm again (a new
 # build, the config regenerated) without going back to the greeter. Apps
 # close either way; startup brings the bar and the rest back.
