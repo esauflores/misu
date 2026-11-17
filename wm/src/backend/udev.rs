@@ -36,7 +36,7 @@ use smithay::{
             EventLoop, LoopHandle, RegistrationToken, ping,
             timer::{TimeoutAction, Timer},
         },
-        drm::control::{ModeTypeFlags, connector, crtc},
+        drm::control::{Device as _, ModeTypeFlags, connector, crtc},
         input::Libinput,
         rustix::fs::OFlags,
         udev,
@@ -138,10 +138,16 @@ impl Drop for Backend {
         let mut hw = self.hardware.borrow_mut();
         hw.input.suspend();
         let handle = hw.handle.clone();
-        for (_, gpu) in hw.gpus.drain() {
+        for (_, mut gpu) in hw.gpus.drain() {
             handle.remove(gpu.token);
+            // Paused, as on a VT switch, the screens keep their last frame
+            // until the next session's (or the console's) replaces it:
+            // switched off, a laptop panel makes both wait out its power
+            // cycle, a second for a restart.
+            gpu.drm.pause();
             drop(gpu);
         }
+        drop(hw);
         for token in self.tokens.drain(..) {
             handle.remove(token);
         }
@@ -444,12 +450,18 @@ impl Hardware {
             session: self.session.clone(),
         };
         let fd = DrmDeviceFd::new(DeviceFd::from(device.fd.as_ref().unwrap().try_clone()?));
-        let (drm, notifier) = DrmDevice::new(fd.clone(), true)?;
+        let started = Instant::now();
+        // Keep lit screens on: turning a laptop panel off makes it wait out
+        // its power cycle before it comes back.
+        let (drm, notifier) = DrmDevice::new(fd.clone(), false)?;
+        let opened = started.elapsed();
         let gbm = GbmDevice::new(fd.device_fd())?;
         // SAFETY: GBM and the EGL context outlive the renderer and its surfaces.
         let display = unsafe { EGLDisplay::new(gbm.clone())? };
         let context = EGLContext::new(&display)?;
+        let egl = started.elapsed();
         let renderer = unsafe { GlesRenderer::new(context)? };
+        tracing::info!(?opened, ?egl, ready = ?started.elapsed(), "GPU {} started", path.display());
         let token = self.handle.insert_source(notifier, move |event, metadata, state| {
             let mut hw = shared.borrow_mut();
             let handle = hw.handle.clone();
@@ -692,7 +704,38 @@ impl Gpu {
                 tracing::warn!(?err, "output unavailable");
             }
         }
+        self.blank_unused();
         Ok(())
+    }
+
+    /// Turn off what still shows on screens Misu doesn't use (the device is
+    /// opened keeping lit screens on, `add_gpu`): the console's or an earlier
+    /// session's picture on one that is off in the config. A surface that is
+    /// dropped clears its CRTC.
+    fn blank_unused(&mut self) {
+        let Ok(resources) = self.drm.resource_handles() else { return };
+        for &crtc in resources.crtcs() {
+            if self.surfaces.contains_key(&crtc) {
+                continue;
+            }
+            let Some(mode) = self.drm.get_crtc(crtc).ok().and_then(|info| info.mode()) else { continue };
+            let lit: Vec<_> = resources
+                .connectors()
+                .iter()
+                .copied()
+                .filter(|&connector| {
+                    let encoder = self.drm.get_connector(connector, false).ok().and_then(|info| info.current_encoder());
+                    encoder.and_then(|encoder| self.drm.get_encoder(encoder).ok()).and_then(|info| info.crtc()) == Some(crtc)
+                })
+                .collect();
+            match self.drm.create_surface(crtc, mode, &lit) {
+                Ok(surface) => {
+                    tracing::info!(?crtc, "blanking a screen Misu doesn't use");
+                    drop(surface);
+                }
+                Err(err) => tracing::warn!(?err, ?crtc, "couldn't blank an unused screen"),
+            }
+        }
     }
 
     /// A connector's output name (`card1-eDP-1`), its stable id, its
@@ -767,7 +810,9 @@ impl Gpu {
         for mode in connector.modes() {
             output.add_mode(Mode::from(*mode));
         }
+        let started = Instant::now();
         let surface = self.drm.create_surface(crtc, mode, &[connector.handle()])?;
+        let created = started.elapsed();
         let compositor = DrmCompositor::new(
             &output,
             surface,
@@ -779,6 +824,7 @@ impl Gpu {
             self.drm.cursor_size(),
             None,
         )?;
+        tracing::info!(surface = ?created, ready = ?started.elapsed(), "screen {} set up", output.name());
         let global = output.create_global::<State>(&state.display_handle);
         let screen = state.add_screen(output);
         self.surfaces.insert(

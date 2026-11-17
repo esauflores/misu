@@ -332,6 +332,7 @@ impl State {
             Action::Quit => self.loop_signal.stop(),
             Action::Restart => {
                 self.restart = true;
+                tracing::info!("restarting");
                 self.loop_signal.stop();
             }
         }
