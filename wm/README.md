@@ -153,7 +153,7 @@ tree` shows each screen's `area` and `layers`. A launcher that wants the
 keyboard gets the keyboard of the seat that started it (`layer_focus` in
 the tree), and gives it back to that seat's window when it closes.
 
-VM checks cover kitty scanout, keyboard and absolute/relative pointer input,
+VM checks cover a terminal's scanout, keyboard and absolute/relative pointer input,
 device assignment to separate seats, two outputs, input/connector/GPU
 unplug and replug, all outputs disconnected, VT recovery, and clean shutdown.
 A regression test covers GPU card renumbering without changing screen IDs.
@@ -161,7 +161,7 @@ Blank output submitted zero frames over a two-second idle check. With
 `RUST_LOG=wm=trace`, submissions appear as `DRM frame queued`. A live mode
 change keeps the screen number. wm is made for one GPU driving every screen;
 rendering across two GPUs isn't supported. The nested e2e test does not
-exercise the direct backend, but it does check kitty's dmabufs are imported.
+exercise the direct backend, but it does check Chromium's dmabufs are imported.
 
 ## Control socket
 
@@ -204,7 +204,7 @@ cargo test --test e2e
 `tests/unit.rs` holds the unit tests, a module per subject: the layout
 (with fake windows), animations, screens, the socket's commands and events,
 and the options. `tests/e2e.rs` runs wm
-nested in a headless scroll (nothing on screen) with kitty windows and checks
+nested in a headless scroll (nothing on screen) with foot windows and checks
 it through the socket: focus and scrolling, a second seat launching on its own
 workspace off screen (through a forking launcher), two seats with their own
 views of one workspace, clicks after a scroll, a seat's animations on and off,
@@ -213,7 +213,7 @@ a dialog floating over its window, a menu's grab, an X11 app and its
 dialog, workspaces, closing, reaping, a second screen that draws only its own
 windows, unplugging one (its workspace floats, its viewer moves), taking a
 floating workspace over, plugging it back, a new screen for an unseen seat,
-quitting, and that a wm inside another leaves the outer socket alone. It is skipped without `scroll` and `kitty`, and leaves
+quitting, and that a wm inside another leaves the outer socket alone. It is skipped without `scroll` and `foot`, and leaves
 logs and a screenshot in `target/tmp/e2e/`.
 
 ## Layout

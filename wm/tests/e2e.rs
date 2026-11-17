@@ -1,7 +1,7 @@
 //! End to end: wm nested in a headless scroll (nothing shows on screen),
-//! with kitty windows, driven and checked through the control socket.
+//! with foot windows, driven and checked through the control socket.
 //!
-//! Needs `scroll` and `kitty` on PATH (skipped otherwise) and a GPU. Leaves a
+//! Needs `scroll` and `foot` on PATH (skipped otherwise) and a GPU. Leaves a
 //! screenshot in target/tmp/e2e/screen.png (and layers.png, with a bar and
 //! fuzzel) when `grim` is there, and dialog.png (seat 0's view of a GTK
 //! dialog over its window). The layer-shell step needs `quickshell`,
@@ -147,9 +147,13 @@ fn centre(tree: &Value, s: usize, window: &Value) -> (i64, i64) {
     (n("x") - view(tree, s) as i64 + n("width") / 2, n("y") + n("height") / 2)
 }
 
-/// Spawn a kitty as seat `s` and wait for its window on that seat's workspace.
+/// foot without the user's config, filling its window exactly (not rounded
+/// down to whole cells).
+const FOOT: &str = "foot --config /dev/null --override resize-by-cells=no";
+
+/// Spawn a foot as seat `s` and wait for its window on that seat's workspace.
 fn open_window(wm: &Wm, s: usize) -> u64 {
-    launch(wm, s, "kitty --config NONE")
+    launch(wm, s, FOOT)
 }
 
 /// Run `command` as seat `s` and wait for its window on that seat's workspace.
@@ -157,7 +161,7 @@ fn launch(wm: &Wm, s: usize, command: &str) -> u64 {
     let workspace = number(&wm.tree(), s) as usize;
     let before = windows(&wm.tree(), workspace).len();
     wm.msg(&format!("seat {s} spawn {command}"));
-    wait_for("a kitty window", || {
+    wait_for("a window", || {
         let tree = wm.tree();
         let ws = windows(&tree, workspace);
         (ws.len() > before && ws.iter().all(|w| w["configured"] == true)).then(|| focus(&tree, s).unwrap())
@@ -230,8 +234,8 @@ fn start_host(dir: &Path, runtime: &Path) -> (Group, String) {
 
 #[test]
 fn nested_in_headless_scroll() {
-    if !on_path("scroll") || !on_path("kitty") {
-        eprintln!("skipped: needs scroll and kitty");
+    if !on_path("scroll") || !on_path("foot") {
+        eprintln!("skipped: needs scroll and foot");
         return;
     }
     let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("e2e");
@@ -318,7 +322,7 @@ fn nested_in_headless_scroll() {
 
     // Seat 1 launches one, through a launcher that forks it off: it still
     // opens on seat 1's workspace, off screen, and nothing changes for seat 0.
-    let theirs = launch(&wm, 1, "setsid -f kitty --config NONE");
+    let theirs = launch(&wm, 1, &format!("setsid -f {FOOT}"));
     let tree = wm.tree();
     assert_eq!(windows(&tree, 2).len(), 1);
     assert_eq!(id_at(&tree, 2, 0), theirs);
@@ -372,6 +376,8 @@ fn nested_in_headless_scroll() {
     let (w1, pixels) = read_png(&png);
     let red = red_in(&pixels, w1, 4..40, 300..340);
     assert!(red > 10, "seat 1's cursor is drawn in its colour: {red} red pixels");
+    // Compared with grim's next, so taken once seat 0's view is still.
+    wait_for("seat 0's view to settle", || (seat(&wm.tree(), 0)["animating"] == false).then_some(()));
     wm.msg(&format!("seat 0 screenshot {}", dir.join("seat0.png").display()));
     assert_eq!(read_png(&dir.join("seat0.png")).0, w);
     assert!(wm.try_msg("seat 1 screenshot relative.png").unwrap()["ok"] == false, "wm wants an absolute path");
@@ -598,9 +604,9 @@ fn nested_in_headless_scroll() {
     assert!(!wm.sock.exists(), "the control socket is removed");
     assert!(outer.exists(), "the outer socket stays");
 
-    // kitty draws with the GPU (Mesa EGL), so its buffers came as dmabufs.
+    // Chromium draws with the GPU (Mesa EGL), so its buffers came as dmabufs.
     let log = fs::read_to_string(dir.join("wm.log")).unwrap();
-    assert!(log.contains("dmabuf import accepted"), "kitty's dmabufs were imported");
+    assert!(log.contains("dmabuf import accepted"), "Chromium's dmabufs were imported");
     assert!(!log.contains("dmabuf import rejected"), "no dmabuf was rejected");
 }
 
@@ -991,6 +997,11 @@ fn chromium_scale(wm: &Wm, dir: &Path) {
         eprintln!("Chromium scale: skipped, needs chromium, helium-browser or brave-origin");
         return;
     };
+    // Brave Origin opens on its purchase screen in a new profile, not the
+    // page; accepting the free tier first skips it (others ignore the key).
+    let profile = dir.join("chromium");
+    fs::create_dir_all(&profile).unwrap();
+    fs::write(profile.join("Local State"), r#"{"brave":{"origin":{"free_tier_accepted":true}}}"#).unwrap();
     // Its own config dir: no flags file from the user's (Misu's Brave is on X11).
     let command = format!(
         "env XDG_CONFIG_HOME={0}/chromium-config {browser} --user-data-dir={0}/chromium --ozone-platform=wayland \
@@ -1010,6 +1021,9 @@ fn chromium_scale(wm: &Wm, dir: &Path) {
         (corner[0] > 200 && corner[1] < 60 && corner[2] > 200).then_some((window, corner))
     });
     eprintln!("Chromium at 0.9 fills {}x{}: {corner:?} at its corner", window["width"], window["height"]);
+    // Closed as a user would: Brave's launcher script runs it as a child, so
+    // killing the script alone leaves the browser up.
+    wm.msg("seat 0 close");
     kill(&pid);
     let id = window["id"].clone();
     wait_for("Chromium's window to go", || {
@@ -1218,8 +1232,8 @@ fn focus_previous(wm: &Wm) {
     let home = seat(&wm.tree(), 0)["workspace"].clone();
     wm.msg("seat 0 workspace 2");
     let there_ws = seat(&wm.tree(), 0)["workspace"].clone();
-    wm.msg("seat 0 spawn kitty");
-    let there = wait_for("a kitty window there", || {
+    wm.msg(&format!("seat 0 spawn {FOOT}"));
+    let there = wait_for("a foot window there", || {
         let tree = wm.tree();
         let ws = tree["workspaces"].as_array().unwrap().iter().find(|w| w["id"] == there_ws)?.clone();
         let id = ws["windows"].as_array()?.first()?["id"].as_u64()?;

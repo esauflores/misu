@@ -728,10 +728,10 @@ mod options {
     #[test]
     fn options() {
         assert_eq!(Config::default().backend, Backend::Winit);
-        let Ok(Command::Run(c)) = args("--mod super --seats 3 -c kitty") else { panic!() };
+        let Ok(Command::Run(c)) = args("--mod super --seats 3 -c foot") else { panic!() };
         assert_eq!(c.modifier, Modifier::Super);
         assert_eq!(c.seats, 3);
-        assert_eq!(c.command.as_deref(), Some("kitty"));
+        assert_eq!(c.command.as_deref(), Some("foot"));
         assert!(matches!(args("--backend drm"), Ok(Command::Run(c)) if c.backend == Backend::Drm));
         assert!(matches!(args("--backend winit"), Ok(Command::Run(c)) if c.backend == Backend::Winit));
         for bad in ["--seats 0", "--seats", "--mod hyper", "--terminal foot", "--what", "--backend", "--backend tty", "--config"] {
@@ -880,7 +880,7 @@ mod options {
             r#"{"bindings":[]}"#,
             r#"{"modifier":"hyper"}"#,
             r#"{"seats":0}"#,
-            r#"{"startup":"kitty"}"#,
+            r#"{"startup":"foot"}"#,
         ] {
             assert!(load(bad, Flags::default()).is_err(), "{bad}");
         }

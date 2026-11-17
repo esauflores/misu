@@ -22,9 +22,13 @@ mise install                                   # Rust, pinned in mise.toml
 - `cargo test` must pass and clippy must be clean after every change. Add a
   test for each fix: `tests/unit.rs` (a module per subject) or a step in
   `tests/e2e.rs` driven through `wm msg`.
-- `tests/e2e.rs` runs wm nested in a headless `scroll` with kitty windows,
+- `tests/e2e.rs` runs wm nested in a headless `scroll` with foot windows,
   nothing on screen. Don't start wm any other way from an agent: nested, it
-  opens a window on the user's screen.
+  opens a window on the user's screen. Inside a wm session, run it outside
+  the session's process tree (`systemd-run --user --pipe --wait --same-dir
+  -E PATH="$PATH" <the e2e binary>`): wm finds a client's seat from
+  `WM_LAUNCH_SEAT` in its ancestors, so the nested wm would take the test's
+  clients for seat 0's and show them only that seat.
 - `references/` (git-ignored) has niri, smithay (the pinned revision),
   cosmic-comp, scroll, sway, wlroots and Hyprland. Check smithay semantics and
   how niri solves a problem there before inventing.
@@ -129,13 +133,13 @@ Step 1 implementation: explicit `--backend drm` (winit remains the default),
 libseat session pause/resume and VT switching, libinput devices mapped by
 exact name through `--config FILE`, GPU/connector hotplug, and per-output DRM
 compositors with damage tracking. Validated in Misu's KVM guest with virtio-gpu:
-kitty, keyboard, absolute/relative pointers, seat mapping, two outputs,
+a terminal, keyboard, absolute/relative pointers, seat mapping, two outputs,
 input/connector/GPU hotplug, all outputs disconnected, VT recovery, idle
 damage and clean shutdown. GPU connector keys use stable device paths, so
 DRM card renumbering preserves screen IDs. Live mode changes keep the screen
 ID (VM: 1366x768 to 1024x768 and back), and at poweroff wm stops before
 seatd. linux-dmabuf client buffers (`src/backend/dmabuf.rs`) work: the e2e run checks
-kitty's Mesa dmabufs are imported on this laptop's Intel GPU. wm targets this
+Chromium's Mesa dmabufs are imported on this laptop's Intel GPU. wm targets this
 laptop: one Intel GPU drives the panel and every port, so multi-GPU is out of
 scope (hotplug of a GPU is handled, rendering across two is not).
 
