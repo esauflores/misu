@@ -320,6 +320,14 @@ impl Hardware {
             InputEvent::PointerMotionAbsolute { event } => event.device(),
             InputEvent::PointerButton { event } => event.device(),
             InputEvent::PointerAxis { event } => event.device(),
+            InputEvent::GestureSwipeBegin { event } => event.device(),
+            InputEvent::GestureSwipeUpdate { event } => event.device(),
+            InputEvent::GestureSwipeEnd { event } => event.device(),
+            InputEvent::GesturePinchBegin { event } => event.device(),
+            InputEvent::GesturePinchUpdate { event } => event.device(),
+            InputEvent::GesturePinchEnd { event } => event.device(),
+            InputEvent::GestureHoldBegin { event } => event.device(),
+            InputEvent::GestureHoldEnd { event } => event.device(),
             _ => return,
         };
         let id = device.sysname().to_owned();
@@ -535,9 +543,20 @@ impl Hardware {
             None => state.fail_shots("no GPU to draw with"),
         }
         // Frame callbacks continue even after the last monitor is unplugged.
+        // At the screens' refresh: a fixed 16 ms (62.5 Hz) on a 60 Hz panel
+        // had apps draw two or three frames a second that never showed, a
+        // hitch in scrolling and animations.
         if now >= self.callbacks_at {
-            self.callbacks_at = now + Duration::from_millis(16);
-            state.send_frames(&self.callback_output, Duration::from_millis(16));
+            let period = self
+                .gpus
+                .values()
+                .flat_map(|gpu| gpu.surfaces.values())
+                .filter_map(|surface| state.screens.get(&surface.screen)?.output.current_mode())
+                .map(|mode| Duration::from_secs_f64(1000.0 / mode.refresh.max(1) as f64))
+                .min()
+                .unwrap_or(Duration::from_millis(16));
+            self.callbacks_at = now + period;
+            state.send_frames(&self.callback_output, period);
         }
         state.after_frame();
     }

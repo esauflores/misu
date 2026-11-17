@@ -241,6 +241,9 @@ by Misu's install.sh):
   holds the seat. The e2e run turns it on with `reload` and moves seat 0
   between a window and its dialog; libinput options are untested nested
   (no libinput there): VM or laptop.
+- Touchpad gestures (done): `pointer-gestures`, all for apps (pinch to
+  zoom; a hold stops Chromium's fling). wm takes no swipes (decided).
+  Needs the laptop: nested has no gestures.
 - Screen settings (done): `Config::screens` (`screens.rs`), a list
   matched by connector (`eDP-1`, `card1-eDP-1`) or identity. `State::connect`
   inserts a screen at its entry's place (`screen_rank`; unlisted ones last),

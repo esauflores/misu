@@ -110,6 +110,8 @@ pub struct State {
     /// at 1×). Chromium needs it to draw a forced scale (Brave at 0.9) over
     /// its whole window, through wp_viewporter.
     pub _fractional_scale: smithay::wayland::fractional_scale::FractionalScaleManagerState,
+    /// Touchpad pinches, holds and swipes, all for the app under the pointer.
+    pub _pointer_gestures: smithay::wayland::pointer_gestures::PointerGesturesState,
     /// X11 apps' display (`:N`), while xwayland-satellite serves one.
     pub xwayland: Option<String>,
     /// Bumped when the input settings may have changed (`reload`): the
@@ -181,6 +183,7 @@ impl State {
             _cursor_shape: smithay::wayland::cursor_shape::CursorShapeManagerState::new::<Self>(&dh),
             _viewporter: smithay::wayland::viewporter::ViewporterState::new::<Self>(&dh),
             _fractional_scale: smithay::wayland::fractional_scale::FractionalScaleManagerState::new::<Self>(&dh),
+            _pointer_gestures: smithay::wayland::pointer_gestures::PointerGesturesState::new::<Self>(&dh),
             compositor_state: CompositorState::new::<Self>(&dh),
             xdg_shell_state: XdgShellState::new::<Self>(&dh),
             layer_shell_state: WlrLayerShellState::new::<Self>(&dh),
@@ -1046,6 +1049,8 @@ pub struct SeatData {
     /// Whether its pointer has moved or clicked yet: until it has, only the
     /// seat itself sees it, so an idle seat leaves no pointer on screen.
     pub pointer_used: bool,
+    /// The surface its pointer was last sent over, with that surface's place.
+    pub pointer_under: Option<(WlSurface, Point<f64, Logical>)>,
 }
 
 #[derive(Default)]
@@ -1079,6 +1084,7 @@ impl Seats {
             animate: true,
             cursor: CursorImageStatus::default_named(),
             pointer_used: false,
+            pointer_under: None,
         });
         index
     }

@@ -45,8 +45,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         state.run(0, Action::Spawn(command));
     }
 
-    // After each turn, tell subscribers what changed.
-    event_loop.run(None, &mut state, State::publish)?;
+    // After each turn, tell subscribers what changed and send clients what
+    // the turn queued for them. Waiting for the next drawn frame instead
+    // delivers input in bursts: Chromium then times touchpad scrolls at about
+    // 0 ms apart and flings far when the fingers lift.
+    event_loop.run(None, &mut state, |state| {
+        state.publish();
+        let _ = state.display_handle.flush_clients();
+    })?;
     let _ = std::fs::remove_file(&ipc_path);
     Ok(())
 }

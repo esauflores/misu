@@ -7,12 +7,13 @@ pub mod settings;
 
 use smithay::{
     backend::input::{
-        AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, InputBackend, InputEvent, InputTime,
-        KeyState, KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
+        AbsolutePositionEvent, Axis, AxisSource, ButtonState, Event, GestureBeginEvent as _, GestureEndEvent as _,
+        GesturePinchUpdateEvent as _, GestureSwipeUpdateEvent as _, InputBackend, InputEvent, InputTime, KeyState,
+        KeyboardKeyEvent, PointerAxisEvent, PointerButtonEvent, PointerMotionEvent,
     },
     input::{
         keyboard::{FilterResult, Keycode, KeyboardSource, Keysym, ModifiersState, keysyms},
-        pointer::{AxisFrame, ButtonEvent, CursorImageStatus, MotionEvent},
+        pointer::{self as gesture, AxisFrame, ButtonEvent, CursorImageStatus, MotionEvent},
     },
     utils::{Logical, Point, Size, SERIAL_COUNTER},
     wayland::shell::wlr_layer::{KeyboardInteractivity, Layer},
@@ -107,14 +108,56 @@ impl State {
                 }
                 self.pointer_axis(seat, frame, Event::time(&event));
             }
+            event => self.gesture(seat, event),
+        }
+    }
+
+    /// A touchpad gesture, for the app under the pointer: pinch to zoom, and
+    /// fingers resting on the pad stop Chromium's scroll fling.
+    fn gesture<I: InputBackend>(&mut self, seat: usize, event: InputEvent<I>) {
+        self.seat_active(seat);
+        let pointer = self.seats[seat].seat.get_pointer().unwrap();
+        let serial = SERIAL_COUNTER.next_serial();
+        match event {
+            InputEvent::GestureSwipeBegin { event } => {
+                pointer.gesture_swipe_begin(self, &gesture::GestureSwipeBeginEvent { serial, time: Event::time(&event), fingers: event.fingers() });
+            }
+            InputEvent::GestureSwipeUpdate { event } => {
+                pointer.gesture_swipe_update(self, &gesture::GestureSwipeUpdateEvent { time: Event::time(&event), delta: event.delta() });
+            }
+            InputEvent::GestureSwipeEnd { event } => {
+                pointer.gesture_swipe_end(self, &gesture::GestureSwipeEndEvent { serial, time: Event::time(&event), cancelled: event.cancelled() });
+            }
+            InputEvent::GesturePinchBegin { event } => {
+                pointer.gesture_pinch_begin(self, &gesture::GesturePinchBeginEvent { serial, time: Event::time(&event), fingers: event.fingers() });
+            }
+            InputEvent::GesturePinchUpdate { event } => {
+                let (time, delta, scale, rotation) = (Event::time(&event), event.delta(), event.scale(), event.rotation());
+                pointer.gesture_pinch_update(self, &gesture::GesturePinchUpdateEvent { time, delta, scale, rotation });
+            }
+            InputEvent::GesturePinchEnd { event } => {
+                pointer.gesture_pinch_end(self, &gesture::GesturePinchEndEvent { serial, time: Event::time(&event), cancelled: event.cancelled() });
+            }
+            InputEvent::GestureHoldBegin { event } => {
+                pointer.gesture_hold_begin(self, &gesture::GestureHoldBeginEvent { serial, time: Event::time(&event), fingers: event.fingers() });
+            }
+            InputEvent::GestureHoldEnd { event } => {
+                pointer.gesture_hold_end(self, &gesture::GestureHoldEndEvent { serial, time: Event::time(&event), cancelled: event.cancelled() });
+            }
             _ => {}
         }
     }
 
-    /// Scroll `seat`'s pointer by `frame`.
+    /// Scroll `seat`'s pointer by `frame`. The pointer is pointed again only
+    /// if what is under it moved or changed (the view scrolled under it): a
+    /// motion frame before every scroll made Chromium time each scroll as
+    /// instant, so lifting the fingers flung far; one shared frame lost GTK's
+    /// scroll (the e2e run's notches).
     pub(crate) fn pointer_axis(&mut self, seat: usize, frame: AxisFrame, time: InputTime) {
-        self.refresh_pointer(seat, time);
         let pointer = self.seats[seat].seat.get_pointer().unwrap();
+        if !pointer.is_grabbed() && self.surface_under(seat, pointer.current_location()) != self.seats[seat].pointer_under {
+            self.pointer_motion(seat, pointer.current_location(), time);
+        }
         pointer.axis(self, frame);
         pointer.frame(self);
     }
@@ -183,6 +226,7 @@ impl State {
 
     pub fn pointer_motion(&mut self, seat: usize, pos: Point<f64, Logical>, time: InputTime) {
         let under = self.surface_under(seat, pos);
+        self.seats.list[seat].pointer_under = under.clone();
         // Over nothing (the background), the default cursor: no app sets it.
         if under.is_none() {
             self.seats.list[seat].cursor = CursorImageStatus::default_named();
