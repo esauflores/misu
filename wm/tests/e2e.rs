@@ -755,7 +755,7 @@ ShellRoot {
         let next = windows(&tree, 1).into_iter().find(|w| w["id"] == focused)?;
         ((next["x"].as_f64()? - view(&tree, 0)).round() as i64 == right).then_some(())
     });
-    sleep(Duration::from_millis(400));
+    wait_for("seat 0's view to settle", || (seat(&wm.tree(), 0)["animating"] == false).then_some(()));
     wm.msg(&format!("seat 0 pointer {} 300", right + 15));
     assert_ne!(seat(&wm.tree(), 0)["pointer"]["over"], next["id"], "past the area, the next column takes no pointer");
     let png = dir.join("neighbour.png");

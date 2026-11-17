@@ -440,7 +440,8 @@ mod animation {
         a.set(200.0, t1, true);
         assert_eq!(a.value(t1), before);
         let mut last = before;
-        for ms in (100..=400).step_by(10) {
+        // until the second change's whole animation is over
+        for ms in (100..=100 + DURATION.as_millis() as u64 + 50).step_by(10) {
             let v = a.value(at(t0, ms));
             assert!(v >= last, "went back from {last} to {v} at {ms}ms");
             last = v;
