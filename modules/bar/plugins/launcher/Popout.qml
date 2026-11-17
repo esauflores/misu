@@ -11,9 +11,10 @@ import qs.services
 
 // App launcher card (Super+Space): the 力 LAUNCH title, a search field, the
 // matching desktop apps (icon, name with the match in bold, what it is)
-// and a key-hint footer. The list fits its results, up to $rows. Apps you
-// launch often and lately come first; launches are counted in the shell's
-// state dir (launcher.json). Type to filter, Up/Down (Tab, Ctrl+N/P/J/K) to
+// and a key-hint footer. The list fits its results, up to $rows: every app
+// A to Z, or while searching the best matches, the ones you launch often and
+// lately first among equals; launches are counted in the shell's state dir
+// (launcher.json). Type to filter, Up/Down (Tab, Ctrl+N/P/J/K) to
 // move, Enter or a click to launch, Esc closes. Takes the keyboard while open
 // (keyboard: "exclusive" in index.js).
 Item {
@@ -63,7 +64,7 @@ Item {
     // Best match first: name prefix, a word in the name starting with the
     // query, the query anywhere in the name, then in the generic name, comment,
     // keywords or categories; ties go to the most used, then A to Z. An empty
-    // query lists everything, most used first.
+    // query lists everything A to Z.
     readonly property var matches: {
         const q = root.query.trim().toLowerCase();
         const all = DesktopEntries.applications.values.filter(e => e && !e.noDisplay);
@@ -80,7 +81,7 @@ Item {
                 else if (extra.includes(q)) score = 3;
                 else continue;
             }
-            scored.push({ e: e, score: score, use: root.frecency(e) });
+            scored.push({ e: e, score: score, use: q === "" ? 0 : root.frecency(e) });
         }
         scored.sort((a, b) => a.score - b.score || b.use - a.use || a.e.name.localeCompare(b.e.name));
         return scored.map(x => x.e);
