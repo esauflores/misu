@@ -100,10 +100,14 @@ impl State {
     }
 
     /// Frame callbacks for the lock surfaces.
-    pub fn lock_frame(&self, time: std::time::Duration, throttle: Option<std::time::Duration>) {
+    pub fn lock_frame(&self, time: std::time::Duration, shown: impl Fn(Option<crate::state::ScreenId>) -> bool) {
         let Some(lock) = &self.locked else { return };
         for (output, surface) in &lock.surfaces {
-            send_frames_surface_tree(surface.wl_surface(), output, time, throttle, |_, _| Some(output.clone()));
+            let screen = self.screens.iter().find(|(_, screen)| screen.output == *output).map(|(id, _)| *id);
+            if !shown(screen) {
+                continue;
+            }
+            send_frames_surface_tree(surface.wl_surface(), output, time, None, |_, _| Some(output.clone()));
         }
     }
 

@@ -33,7 +33,7 @@ use smithay::{
     output::{Mode, Output, PhysicalProperties, Subpixel},
     reexports::{
         calloop::{
-            EventLoop, LoopHandle, RegistrationToken,
+            EventLoop, LoopHandle, RegistrationToken, ping,
             timer::{TimeoutAction, Timer},
         },
         drm::control::{ModeTypeFlags, connector, crtc},
@@ -63,6 +63,12 @@ struct Surface {
     compositor: Compositor,
     pending: bool,
     next_frame: Instant,
+    /// The first commit the queued frame shows, and the DRM sequence of the
+    /// last frame shown (`FrameStats`).
+    committed_at: Option<Instant>,
+    sequence: Option<u32>,
+    /// When this screen's last page flip sent its windows frame callbacks.
+    flipped_at: Option<Instant>,
 }
 struct Gpu {
     name: String,
@@ -224,8 +230,22 @@ pub fn init(event_loop: &mut EventLoop<'static, State>, state: &mut State) -> Re
         LibinputInputBackend::new(input),
         move |event, _, state| {
             hw.borrow_mut().process_input(event, state);
+            if let Some(redraw) = &state.redraw {
+                redraw.ping();
+            }
         },
     )?);
+    // Commits and input draw at once (coalesced per loop iteration), so they
+    // make the next flip rather than waiting for the poll.
+    let (redraw, source) = ping::make_ping()?;
+    state.redraw = Some(redraw);
+    let hw = hardware.clone();
+    backend.tokens.push(event_loop.handle().insert_source(source, move |_, _, state| {
+        let mut hw = hw.borrow_mut();
+        if hw.active {
+            hw.render(state);
+        }
+    })?);
     // Initial enumeration and subsequent hotplug use exactly the same path.
     for (id, path) in udev.device_list() {
         if let Err(err) = hardware.borrow_mut().add_gpu(id, path, state, hardware.clone()) {
@@ -423,7 +443,7 @@ impl Hardware {
         let display = unsafe { EGLDisplay::new(gbm.clone())? };
         let context = EGLContext::new(&display)?;
         let renderer = unsafe { GlesRenderer::new(context)? };
-        let token = self.handle.insert_source(notifier, move |event, _, state| {
+        let token = self.handle.insert_source(notifier, move |event, metadata, state| {
             let mut hw = shared.borrow_mut();
             let handle = hw.handle.clone();
             if let Some(gpu) = hw.gpus.get_mut(&id) {
@@ -434,6 +454,18 @@ impl Hardware {
                                 tracing::warn!(?err, "page flip completion failed");
                             }
                             surface.pending = false;
+                            let sequence = metadata.map(|m| m.sequence);
+                            let gap = sequence.zip(surface.sequence).map(|(now, last)| now.wrapping_sub(last));
+                            surface.sequence = sequence.or(surface.sequence);
+                            state.frame_stats.shown(gap, surface.committed_at.take());
+                            // Apps draw their next frame now, a whole refresh
+                            // ahead of the next flip, instead of at a timer
+                            // drifting against the screen.
+                            let screen = surface.screen;
+                            surface.flipped_at = Some(Instant::now());
+                            if let Some(output) = state.screens.get(&screen).map(|screen| screen.output.clone()) {
+                                state.send_frames(&output, |shown| shown == Some(screen));
+                            }
                         }
                     }
                     DrmEvent::Error(err) => tracing::warn!(?err, "DRM event error"),
@@ -503,7 +535,10 @@ impl Hardware {
         }
         for gpu in self.gpus.values_mut() {
             for surface in gpu.surfaces.values_mut() {
-                if surface.pending || now < surface.next_frame {
+                // Draw whenever no flip is outstanding: on a commit, input or
+                // the flip's completion, and at least once a refresh while
+                // something animates (the poll).
+                if surface.pending {
                     continue;
                 }
                 let output = state.screens[&surface.screen].output.clone();
@@ -525,11 +560,15 @@ impl Hardware {
                     continue;
                 }
                 if frame.is_empty {
+                    // Nothing new to show: the commits so far changed nothing
+                    // here, so they don't count towards commit-to-screen time.
+                    state.committed_at = None;
                     continue;
                 }
                 match surface.compositor.queue_frame(()) {
                     Ok(()) => {
                         surface.pending = true;
+                        surface.committed_at = state.committed_at.take();
                         tracing::trace!(screen = surface.screen.0, "DRM frame queued");
                     }
                     Err(err) => tracing::warn!(?err, "DRM submit failed"),
@@ -542,21 +581,23 @@ impl Hardware {
             Some(gpu) => state.take_shots(&mut gpu.renderer),
             None => state.fail_shots("no GPU to draw with"),
         }
-        // Frame callbacks continue even after the last monitor is unplugged.
-        // At the screens' refresh: a fixed 16 ms (62.5 Hz) on a 60 Hz panel
-        // had apps draw two or three frames a second that never showed, a
-        // hitch in scrolling and animations.
+        // Screens with flips get callbacks from them (the VBlank event). The
+        // poll covers the rest at the refresh: windows no screen shows, and
+        // screens with nothing new to flip (an app's first frame, or an
+        // unchanged one), even after the last monitor is unplugged.
         if now >= self.callbacks_at {
-            let period = self
-                .gpus
-                .values()
-                .flat_map(|gpu| gpu.surfaces.values())
+            let surfaces = || self.gpus.values().flat_map(|gpu| gpu.surfaces.values());
+            let period = surfaces()
                 .filter_map(|surface| state.screens.get(&surface.screen)?.output.current_mode())
                 .map(|mode| Duration::from_secs_f64(1000.0 / mode.refresh.max(1) as f64))
                 .min()
                 .unwrap_or(Duration::from_millis(16));
+            let flipping: Vec<ScreenId> = surfaces()
+                .filter(|surface| surface.flipped_at.is_some_and(|at| now.duration_since(at) < period * 3 / 2))
+                .map(|surface| surface.screen)
+                .collect();
             self.callbacks_at = now + period;
-            state.send_frames(&self.callback_output, period);
+            state.send_frames(&self.callback_output, |screen| screen.is_none_or(|id| !flipping.contains(&id)));
         }
         state.after_frame();
     }
@@ -709,6 +750,9 @@ impl Gpu {
                 compositor,
                 pending: false,
                 next_frame: Instant::now(),
+                committed_at: None,
+                sequence: None,
+                flipped_at: None,
             },
         );
         Ok(())

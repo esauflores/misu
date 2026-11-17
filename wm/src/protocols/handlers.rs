@@ -143,6 +143,10 @@ impl CompositorHandler for State {
     }
 
     fn commit(&mut self, surface: &WlSurface) {
+        self.committed_at.get_or_insert_with(std::time::Instant::now);
+        if let Some(redraw) = &self.redraw {
+            redraw.ping();
+        }
         on_commit_buffer_handler::<Self>(surface);
         if self.layer_commit(surface) {
             return;

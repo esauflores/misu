@@ -1,6 +1,6 @@
 //! The nested backend: the compositor runs in a window of the host's.
 
-use std::time::{Duration, Instant};
+use std::time::Instant;
 
 use smithay::{
     backend::{
@@ -57,7 +57,7 @@ pub fn init(event_loop: &mut EventLoop<State>, state: &mut State) -> Result<(), 
             }
             state.take_shots(backend.renderer());
 
-            state.send_frames(&output, Duration::ZERO);
+            state.send_frames(&output, |_| true);
             state.after_frame();
             // The host paces frames; keep asking for them.
             backend.window().request_redraw();

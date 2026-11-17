@@ -148,13 +148,13 @@ impl State {
 
     /// Frame callbacks for every connected screen's layer surfaces, and
     /// forgetting the ones that went away.
-    pub fn layers_frame(&self, time: Duration, throttle: Option<Duration>) {
-        for id in &self.connected {
+    pub fn layers_frame(&self, time: Duration, shown: impl Fn(Option<ScreenId>) -> bool) {
+        for id in self.connected.iter().filter(|id| shown(Some(**id))) {
             let output = &self.screens[id].output;
             let mut map = layer_map_for_output(output);
             map.cleanup();
             for layer in map.layers() {
-                layer.send_frame(output, time, throttle, |_, _| Some(output.clone()));
+                layer.send_frame(output, time, None, |_, _| Some(output.clone()));
             }
         }
     }

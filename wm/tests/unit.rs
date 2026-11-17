@@ -592,6 +592,7 @@ mod ipc {
         assert_eq!(ok("animations").command, Command::Action(Action::Animations(None)));
         assert_eq!(ok("spawn foot -e  htop").command, Command::Action(Action::Spawn("foot -e htop".into())));
         assert_eq!(ok("restart").command, Command::Action(Action::Restart));
+        assert_eq!(ok("stats").command, Command::Stats);
         assert_eq!(ok("pointer 10 20.5").command, Command::Pointer(10.0, 20.5));
         assert_eq!(ok("click").command, Command::Click(Button::Left, None, 1));
         assert_eq!(ok("click 1 2").command, Command::Click(Button::Left, Some((1.0, 2.0)), 1));
@@ -896,6 +897,25 @@ mod options {
         let combo = wm::input::bindings::pressed(&mods(true, false, true), sym(keysyms::KEY_P));
         assert!(c.locked_bindings.contains(&mute) && c.locked_bindings.contains(&combo));
         assert!(!c.locked_bindings.contains(&wm::input::bindings::pressed(&mods(true, false, false), sym(keysyms::KEY_Return))));
+    }
+}
+
+mod frame_stats {
+    use std::time::Instant;
+    use wm::backend::FrameStats;
+
+    #[test]
+    fn counts_refreshes_between_frames_and_starts_over() {
+        let mut stats = FrameStats::default();
+        stats.shown(None, None); // the first frame: no gap yet
+        for gap in [1, 1, 2, 3, 5, 30] {
+            stats.shown(Some(gap), Some(Instant::now()));
+        }
+        let taken = stats.take();
+        assert_eq!(taken["frames"], 7);
+        // 30 refreshes apart is idle time, not a miss.
+        assert_eq!(taken["gaps"], serde_json::json!({"1": 2, "2": 1, "3": 1, "4+": 1}));
+        assert_eq!(stats.take()["frames"], 0, "taking starts over");
     }
 }
 

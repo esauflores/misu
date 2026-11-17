@@ -83,6 +83,12 @@ pub struct State {
     pub loop_signal: LoopSignal,
     /// Quitting to be started again (`restart`, `RESTART_EXIT`).
     pub restart: bool,
+    /// Frame pacing for `wm msg stats` (DRM only).
+    pub frame_stats: crate::backend::FrameStats,
+    /// When the first commit since the last frame drawn came.
+    pub committed_at: Option<Instant>,
+    /// Wakes the DRM backend to draw now rather than at its next poll.
+    pub redraw: Option<smithay::reexports::calloop::ping::Ping>,
     pub loop_handle: LoopHandle<'static, Self>,
     pub dmabuf: crate::backend::dmabuf::DmabufSupport,
 
@@ -162,6 +168,9 @@ impl State {
             socket_name: Self::listen(display, event_loop),
             loop_signal: event_loop.get_signal(),
             restart: false,
+            frame_stats: Default::default(),
+            committed_at: None,
+            redraw: None,
             loop_handle: event_loop.handle(),
             dmabuf: crate::backend::dmabuf::DmabufSupport::default(),
             screens: HashMap::new(),

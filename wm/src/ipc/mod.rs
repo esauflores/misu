@@ -61,6 +61,9 @@ pub const ENV: &str = "WM_SOCK";
 
 pub const HELP: &str = "[seat N] COMMAND, where COMMAND is one of:
   tree                      windows, workspaces and seats, as JSON
+  stats                     frame pacing since the last stats, then starts
+                            over: frames, fps, refreshes between frames
+                            (1 on time), commit-to-screen time (DRM only)
   subscribe                 keep the connection: the state, then a JSON
                             line for each change (see src/ipc/mod.rs)
   spawn CMD…                run a command
@@ -99,6 +102,8 @@ pub const HELP: &str = "[seat N] COMMAND, where COMMAND is one of:
 #[derive(Debug, Clone, PartialEq)]
 pub enum Command {
     Tree,
+    /// Frame pacing since the last `stats` (`FrameStats`).
+    Stats,
     Help,
     /// Keep the connection open for events.
     Subscribe,
@@ -161,6 +166,7 @@ pub fn parse(line: &str) -> Result<Request, String> {
     };
     let command = match name {
         "tree" if args.is_empty() => Command::Tree,
+        "stats" if args.is_empty() => Command::Stats,
         "subscribe" if args.is_empty() => Command::Subscribe,
         "help" => Command::Help,
         "spawn" if !args.is_empty() => Command::Action(Action::Spawn(args.join(" "))),
@@ -396,12 +402,13 @@ impl State {
 
     /// A command that replies at once, for `seat`.
     fn handle_request(&mut self, seat: usize, command: Command) -> Result<Value, String> {
-        let harmless = matches!(command, Command::Tree | Command::Help | Command::Action(Action::Reload));
+        let harmless = matches!(command, Command::Tree | Command::Stats | Command::Help | Command::Action(Action::Reload));
         if self.is_locked() && !harmless {
             return Err("the session is locked".into());
         }
         match command {
             Command::Tree => return Ok(self.tree()),
+            Command::Stats => return Ok(self.frame_stats.take()),
             Command::Help => return Ok(Value::String(HELP.into())),
             Command::Subscribe | Command::Screenshot(_) | Command::Drag(..) => {
                 return Err("this command takes a connection of its own".into());
