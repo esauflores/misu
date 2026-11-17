@@ -194,7 +194,7 @@ Menus (above): the e2e run opens a GTK popover, checks seat 0 alone is
 held, clicks outside it and checks the grab is gone and the window has the
 keyboard back. Closing on a focus change is untested.
 Decorations: xdg-decoration answers server side whatever the app asks,
-so kitty, Firefox and Qt apps drop their title bars (GTK 4 doesn't speak
+so foot and Qt apps drop their title bars (GTK 4 doesn't speak
 it and keeps its own). wm draws a `BORDER` (2 px) border in the gap round
 each window, coloured by the first seat focusing it (`colors.seats`, by
 index, also the pointers'), else `colors.inactive`; none when full screen.

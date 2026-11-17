@@ -8,7 +8,7 @@ import Quickshell.Services.Mpris
 // else the first registered. One shared instance, kept alive by the rail.
 //
 // `length` is the track's length in seconds, 0 when unknown. Firefox-based
-// browsers (Zen) send it only alongside a position update (a track change,
+// browsers send it only alongside a position update (a track change,
 // seek, play or pause) and drop it from the next metadata a moment later, so
 // it is remembered for the track it came with.
 Singleton {
@@ -36,7 +36,7 @@ Singleton {
         const len = root.player.length;
         Qt.callLater(() => { root.lengthSeen = len; root.lengthKey = root.trackKey; });
     }
-    // Next/Previous. Firefox-based browsers (Zen) turn CanGoNext/CanGoPrevious
+    // Next/Previous. Firefox-based browsers turn CanGoNext/CanGoPrevious
     // on once the page registers its media-session handlers but never signal
     // the change, so Quickshell keeps the false it first read and refuses the
     // call; the method is sent over D-Bus directly then.

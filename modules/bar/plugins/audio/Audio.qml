@@ -99,8 +99,8 @@ Singleton {
     function streamName(n) {
         return root.prop(n, "application.name") || root.nodeLabel(n);
     }
-    // The stream's own icon name, else its app's desktop entry (Zen's stream
-    // names no icon and runs as zen-bin; its entry's icon is zen-browser), else
+    // The stream's own icon name, else its app's desktop entry (for streams
+    // that name no icon and run as a binary named unlike the icon), else
     // the binary's name. Quickshell scans the desktop entries only once
     // `applications` is read, and heuristicLookup alone doesn't trigger it, so
     // read it here: that loads them and re-runs the binding when they land.

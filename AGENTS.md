@@ -79,8 +79,8 @@ sudo ./uninstall.sh [--packages] [mod]   # --packages also removes their package
   what the subtitles showed. `bar`'s `plugins/dictate` shows its rail button
   only while `misu-dictate` is on PATH.
 - `apps`: herdr, mimeapps, Brave Origin (0.9 scale, policies in
-  `/etc/brave/policies/managed`: no password manager, forced extensions; it
-  replaced Zen), Zed (replaced VS Code; on Wayland, 0.9 font sizes, defaults merged into
+  `/etc/brave/policies/managed`: no password manager, forced extensions; the
+  only browser), Zed (replaced VS Code; on Wayland, 0.9 font sizes, defaults merged into
   its settings, matugen theme `Misu`), AI CLIs and the Archify skill (diagrams and explainers) for Claude Code and Codex
 
 When you add a package or an installed file, put it in its module's

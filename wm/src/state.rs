@@ -565,8 +565,8 @@ impl State {
     /// The seat in the environment of process `pid` (see `LAUNCH_ENV`).
     ///
     /// The process, else the nearest of its ancestors, that a seat spawned
-    /// or that has `LAUNCH_ENV`. Both are needed: Chromium-based apps (VS
-    /// Code, Obsidian) overwrite their environment, and `sh -c` execs into
+    /// or that has `LAUNCH_ENV`. Both are needed: Chromium-based apps
+    /// (Electron) overwrite their environment, and `sh -c` execs into
     /// the command, so wm's own record of the pid it spawned is what tells;
     /// a process that daemonized has left that tree, and its inherited
     /// environment tells instead.

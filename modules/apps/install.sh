@@ -40,12 +40,11 @@ else
 fi
 link "$home/.local/state/rice/zed-theme.json" "$home/.config/zed/themes/misu.json"
 # Brave Origin's policies win over every profile's settings: no built-in
-# password manager or card autofill (Bitwarden does both), and the extensions
-# Zen had, force-installed from the Chrome Web Store: Bitwarden, uBlock Origin
+# password manager or card autofill (Bitwarden does both), and these
+# extensions, force-installed from the Chrome Web Store: Bitwarden, uBlock Origin
 # Lite (the store has no uBlock Origin since MV2 ended; Brave's hosted copy is
 # switched on by hand at brave://settings/extensions/v2), Enhancer for YouTube
-# and Always active Window. Zen's user-agent switcher isn't needed: Brave is
-# Chrome to sites already.
+# and Always active Window.
 run install -Dm644 "$M/apps/brave/policies.json" /etc/brave/policies/managed/misu.json
 link "$M/apps/brave/brave-origin-flags.conf" "$home/.config/brave-origin-flags.conf"
 

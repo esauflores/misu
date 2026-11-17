@@ -3,8 +3,6 @@
 
 install_packages shell
 
-unlink_ours "$home/.config/kitty/kitty.conf"
-
 link "$M/shell/zshrc" "$home/.zshrc"
 # foot requires its include to exist, including a shell-only install.
 if [[ ! -f $home/.local/state/rice/foot-colors.ini ]]; then

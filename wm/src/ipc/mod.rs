@@ -18,7 +18,7 @@
 //!
 //! ```text
 //! {"event":"seat","change":"change","id":1,"workspace":4,"number":2,"focus":7,…}
-//! {"event":"window","change":"new","id":9,"app_id":"kitty","title":"~","workspace":4}
+//! {"event":"window","change":"new","id":9,"app_id":"foot","title":"~","workspace":4}
 //! {"event":"window","change":"gone","id":9}
 //! {"event":"screen","change":"change","id":2,"connected":false,…}
 //! ```

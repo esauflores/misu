@@ -9,8 +9,8 @@
 //! (`Rounded`), and the border is a ring round them drawn by a pixel shader.
 //! Popups (menus) aren't cut; full-screen windows are square.
 //!
-//! GTK 4 apps don't speak `xdg-decoration` and keep their own; kitty,
-//! Firefox, Qt and others drop theirs.
+//! GTK 4 apps don't speak `xdg-decoration` and keep their own; foot,
+//! Qt and others drop theirs.
 
 use std::sync::Mutex;
 
